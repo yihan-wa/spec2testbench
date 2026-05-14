@@ -1,0 +1,48 @@
+* ============================================================================
+* Testbench for 5-Transistor Differential Pair OTA — small-signal AC verify
+* ----------------------------------------------------------------------------
+* Spec items being checked:
+*   - DC gain          > 60 dB
+*   - Unity-gain BW   >= 10 MHz   (with 1 pF load on output)
+*
+* Driven by IR (trace.md §2) + DUT (dut.cir) + PDK-equivalent defaults
+* (trace.md §3 design-decisions table).
+*
+* Run:  ngspice -b testbench.cir -o testbench.log
+* ============================================================================
+
+* --- Bring in DUT (subckt ota5t + level-1 NMOS/PMOS models) ---
+.include "dut.cir"
+
+* --- Supplies (from §3 PDK-equivalent defaults) ---
+V_VDD   vdd    0     DC 1.8
+V_BIAS  vbias  0     DC 0.6
+V_CM    vcm    0     DC 0.9
+
+* --- Differential AC stimulus around common-mode (IR §2 stimulus block) ---
+*   vinp = vcm + 0.5 * AC(0°)
+*   vinn = vcm + 0.5 * AC(180°)   →  differential AC = 1.0
+V_INP   vinp   vcm   DC 0  AC 0.5  0
+V_INN   vinn   vcm   DC 0  AC 0.5  180
+
+* --- Output load (IR §2 loading block) ---
+C_LOAD  vout   0     1p
+
+* --- Instantiate the DUT ---
+*   subckt port order:  vinp vinn vout vbias vdd vss
+X1  vinp vinn vout vbias vdd 0  ota5t
+
+* --- Analysis + measurements in a .control block ---
+* NOTE: ngspice 45.2 rejects raw .measure ac vdb()/vm() without compatibility
+* mode; using native .control block with `meas` instead. dB conversion is
+* done in post-processing (Stage 6).
+*   dc_gain_lin := |H(f)| at the lowest swept frequency (1 Hz)
+*   ugb         := frequency where |H(f)| first crosses 1 (= 0 dB)
+.control
+ac dec 20 1 1G
+meas ac dc_gain_lin find vm(vout) at=1
+meas ac ugb         when vm(vout)=1 cross=1
+print dc_gain_lin ugb
+.endc
+
+.end

@@ -1,0 +1,16 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: * ============================================================================
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 181
+dc_gain_lin         =  2.019711e+03
+ugb                 =  3.206502e+07
+dc_gain_lin = 2.019711e+03
+ugb = 3.206502e+07
+Note: Simulation executed from .control section 

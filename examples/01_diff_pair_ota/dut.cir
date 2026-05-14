@@ -1,0 +1,34 @@
+* ============================================================================
+* 5-Transistor Differential Pair OTA (DUT only — no stimulus, no analysis)
+* ----------------------------------------------------------------------------
+* Topology:
+*   - NMOS input differential pair (M1, M2)
+*   - PMOS current-mirror load   (M3 diode-connected, M4 mirror)
+*   - NMOS tail current source   (M5, gate driven by external Vbias)
+*
+* Subckt port order:  vinp  vinn  vout  vbias  vdd  vss
+*
+* MOSFET models: SPICE level-1, generic textbook params (no PDK).
+* Models are co-located in this file so a single `.include "dut.cir"` is enough.
+*
+* Design point (numbers reflected in Stage-4 testbench Vbias / VDD choices):
+*   VDD               = 1.8 V       (set by testbench supply)
+*   Vbias_tail        = 0.6 V       (set by testbench → I_tail ≈ 10 µA)
+*   I_branch          ≈ 5 µA each
+*   Targeted small-signal DC gain ≈ 60–66 dB
+* ============================================================================
+
+.subckt ota5t  vinp vinn vout vbias vdd vss
+* --- PMOS current-mirror load ---
+M3  n1    n1    vdd  vdd  PMOD  W=80u L=1u
+M4  vout  n1    vdd  vdd  PMOD  W=80u L=1u
+* --- NMOS input differential pair ---
+M1  n1    vinp  tail vss  NMOD  W=40u L=1u
+M2  vout  vinn  tail vss  NMOD  W=40u L=1u
+* --- NMOS tail current source ---
+M5  tail  vbias vss  vss  NMOD  W=20u L=1u
+.ends ota5t
+
+* --- MOSFET models (level-1, lambda small for high ro / high gain) ---
+.model NMOD NMOS (level=1 vto=0.5  kp=100u lambda=0.01)
+.model PMOD PMOS (level=1 vto=-0.5 kp=50u  lambda=0.01)

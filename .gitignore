@@ -1,0 +1,40 @@
+# ── Python ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ── uv / virtualenv ────────────────────────────────────────
+.venv/
+.python-version.local
+
+# ── Build artifacts ────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+*.egg
+
+# ── Tooling caches ─────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── IDE / editor ───────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── OS ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Claude Code local state (not part of the project) ──────
+.claude/
+
+# ── Local secrets / env files (NEVER commit) ───────────────
+.env
+.env.*
+!.env.example
