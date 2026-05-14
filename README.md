@@ -15,7 +15,7 @@
 
 - [一句话介绍](#一句话介绍)
 - [为什么做这个项目](#为什么做这个项目)
-- [完整愿景：图 2 的 pipeline](#完整愿景图-2-的-pipeline)
+- [完整愿景：pipeline](#完整愿景pipeline)
 - [当前实际做到了什么（v0）](#当前实际做到了什么v0)
 - [快速上手](#快速上手)
 - [代码库结构](#代码库结构)
@@ -29,7 +29,6 @@
 - [路线图](#路线图)
 - [测试与质量](#测试与质量)
 - [常见问题](#常见问题)
-- [鸣谢与参考](#鸣谢与参考)
 
 ---
 
@@ -70,11 +69,11 @@
 
 `spec2testbench` 就是把"人话需求 → testbench"这一步**自动化**。
 
-为什么基于 Claude / LLM？因为这一步本质是**带专家知识的结构化翻译**——LLM 是目前唯一能在这个语义层稳定操作的工具。
+为什么用 LLM？因为这一步本质是**带专家知识的结构化翻译**——LLM 是目前唯一能在这个语义层稳定操作的工具。
 
 ---
 
-## 完整愿景：图 2 的 pipeline
+## 完整愿景：pipeline
 
 ```
 ┌──────────────┐
@@ -102,13 +101,11 @@
 └──────────────────┘
 ```
 
-完整愿景的具体描述见仓库根目录的 `image1.png` 和 `image2.png`，以及 `docs/project_overview.md`。
-
 ---
 
 ## 当前实际做到了什么（v0）
 
-**v0 范围：spec → IR 这一条**（图 2 上半段）。下半段（IR → 可执行 netlist → 仿真 → verdict）作为后续步骤分阶段实装。
+**v0 范围：spec → IR 这一条**（pipeline 上半段）。下半段（IR → 可执行 netlist → 仿真 → verdict）作为后续步骤分阶段实装。
 
 具体落地的三件事：
 
@@ -125,7 +122,7 @@
 
 ### ② 严格的 IR schema（Step 2）
 
-用 pydantic v2 把"图 2 中间那个 JSON"的形态彻底锁死，**11 条 schema gap 中 10 条就地解决**，剩 1 条（VDD/bias/Vcm）显式推到未来的 PDKContext。
+用 pydantic v2 把结构化 TestPlan IR 的形态彻底锁死，**11 条 schema gap 中 10 条就地解决**，剩 1 条（VDD/bias/Vcm）显式推到未来的 PDKContext。
 
 代码：`src/spec2testbench/ir.py`（约 440 行）
 - 11 个 pydantic models
@@ -140,7 +137,7 @@
 | 函数 | 接什么 |
 |---|---|
 | `extract_with_anthropic` | Anthropic 直连 (api.anthropic.com)，带 prompt caching |
-| `extract_with_openai_compatible` | OpenAI 协议端点：OpenAI 直连 / OpenRouter / Xiaomi MiMo / Alibaba DashScope / 本地 vLLM——任何说 OpenAI 协议的服务 |
+| `extract_with_openai_compatible` | OpenAI 协议端点：OpenAI 直连 / OpenRouter / 阿里 DashScope / 其他公司的兼容平台 / 本地 vLLM——任何说 OpenAI 协议的服务 |
 
 代码：`src/spec2testbench/extract.py` + `src/spec2testbench/evaluate.py`
 
@@ -188,11 +185,11 @@ export OPENAI_COMPAT_MODEL=anthropic/claude-sonnet-4.6
 uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
 ```
 
-**Xiaomi MiMo（假设 OpenAI 兼容）：**
+**任意 OpenAI 兼容平台（替换为你的实际 endpoint 和模型）：**
 ```bash
 export OPENAI_COMPAT_API_KEY=...
-export OPENAI_COMPAT_BASE_URL=https://<xiaomi-endpoint>/v1
-export OPENAI_COMPAT_MODEL=<xiaomi-model-id>
+export OPENAI_COMPAT_BASE_URL=https://<your-endpoint>/v1
+export OPENAI_COMPAT_MODEL=<their-model-id>
 uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
 ```
 
@@ -214,14 +211,9 @@ grep -E 'dc_gain_lin|ugb' testbench.log
 spec2testbench/
 ├── README.md                          ← 你正在读的这份
 │
-├── image1.png  image2.png             ← 项目动机 + 技术路线图（原始）
-│
 ├── pyproject.toml                     ← uv 项目配置；deps: pydantic / anthropic / openai / pytest / ruff
 ├── uv.lock                            ← 依赖锁文件（committed for reproducibility）
 ├── .python-version                    ← 锁定 3.13
-│
-├── docs/
-│   └── project_overview.md            ← 当前项目状态 vs 图 1/2 目标的完整对照
 │
 ├── examples/
 │   └── 01_diff_pair_ota/              ← Running example：5-管差分对 OTA
@@ -249,7 +241,7 @@ spec2testbench/
 
 ### IR：项目的心脏
 
-`TestPlan` IR 是图 2 中间那个结构化 JSON 的严格类型化形式。它把"测什么、怎么测、怎么判断通过"用 **7 个顶层 section** 表达出来：
+`TestPlan` IR 是流水线中间的结构化数据的严格类型化形式。它把"测什么、怎么测、怎么判断通过"用 **7 个顶层 section** 表达出来：
 
 ```python
 class TestPlan(BaseModel):
@@ -263,7 +255,7 @@ class TestPlan(BaseModel):
     corners:        list[Corner]      # 工艺角
 ```
 
-**为什么是 7 个 section 而不是图 2 那种扁平 JSON？** 因为只要有 ≥ 2 个测量共享一次仿真（典型情况：DC gain 和 UGB 都来自同一次 AC 扫频），扁平形态就崩了。详见 `examples/01_diff_pair_ota/trace.md` §2 中的 Gap-B 分析。
+**为什么要拆 7 个 section 而不是一份扁平 JSON？** 因为只要有 ≥ 2 个测量共享一次仿真（典型情况：DC gain 和 UGB 都来自同一次 AC 扫频），扁平形态就崩了。详见 `examples/01_diff_pair_ota/trace.md` §2 中的 Gap-B 分析。
 
 **强约束：**
 - `extra="forbid"` —— 多写一个 schema 没定义的字段直接拒绝
@@ -285,13 +277,13 @@ class MeasurementPrimitive(str, Enum):
 每个原语：
 - 语义闭合（精确定义"如何从仿真曲线取数"）
 - 单位明确（output_unit 是 IR 字段，必填）
-- 参数必填（crossing 类必须带 direction，杜绝 Gap-G 的方向丢失）
+- 参数必填（crossing 类必须带 direction，杜绝方向语义丢失）
 
 v0 只内置 2 个原语——只为当前 running example 服务。后续 example 出现新测量需求时再扩展（YAGNI）。
 
 ### 跨厂商 LLM extractor
 
-**严格遵循 [`prefer-cross-provider-portability`](./.claude/projects/-Users-eulerone-Documents-spec2testbench/memory/prefer_cross_provider_portability.md) 原则**：**不**做厂商抽象层，**不**用 LangChain/LiteLLM 这种胶水库；写两个并列函数，签名完全一致：
+**严格遵循跨厂商可移植原则**：**不**做厂商抽象层，**不**用 LangChain/LiteLLM 这种胶水库；写两个并列函数，签名完全一致：
 
 ```python
 def extract_with_anthropic(
@@ -341,7 +333,7 @@ def evaluate_extraction(extracted: TestPlan, gold: TestPlan) -> EvaluationReport
 
 ### Running example：5-管差分对 OTA
 
-整个项目的"地基"。一个教科书电路 + 两条简单 spec，**手工**跑通图 2 整条 pipeline。产出的 `trace.md` 是 380+ 行的"工程日志"，记录每个阶段的：
+整个项目的"地基"。一个教科书电路 + 两条简单 spec，**手工**跑通整条 pipeline。产出的 `trace.md` 是 380+ 行的"工程日志"，记录每个阶段的：
 
 - 输入是什么
 - 我手工写了什么
@@ -367,7 +359,7 @@ def evaluate_extraction(extracted: TestPlan, gold: TestPlan) -> EvaluationReport
 > 这些原则**贯穿全部代码**，不是装饰。
 
 1. **跨厂商优先（No vendor lock-in）**
-   永远写并列函数 `extract_with_<provider>`，不写厂商抽象层。详见 `memory/prefer_cross_provider_portability.md`。
+   永远写并列函数 `extract_with_<provider>`，不写厂商抽象层。
 
 2. **schema 严格（Strict schema, fail fast）**
    pydantic `extra="forbid"` + 闭集枚举 + cross-field validator。LLM 抽错时**在最早的边界**拒绝，并给出精确错误信息。
@@ -422,13 +414,13 @@ uv run ruff check         # lint
 
 ## 常见问题
 
-**Q: 为什么 v0 只做到 spec → IR？图 2 不是要直接出 testbench 吗？**
+**Q: 为什么 v0 只做到 spec → IR？不是要直接出 testbench 吗？**
 A: trace 撞出来 27 条问题分布在 4 个不同 layer（IR schema / emitter / PDKContext / evaluator）。一次性都做意味着每一层都做不深。Step 2 先把 IR 这层做扎实，下一步（Step 5）才有稳定底座做 emitter。
 
 **Q: 为什么用 ngspice 而不是 Spectre？**
 A: ngspice 是 open-source fallback，hermetic 测试方便。v0 用 ngspice 不代表项目长期是 ngspice-only——`MeasurementPrimitive` 抽象就是为了让未来 emitter 同时支持 Spectre / HSPICE / ngspice。
 
-**Q: 我没有 Anthropic key，只有 OpenRouter / Xiaomi MiMo key，能用吗？**
+**Q: 我没有 Anthropic key，只有 OpenRouter / 其他第三方平台的 key，能用吗？**
 A: 能。用 `extract_with_openai_compatible` 函数，传你的 `(api_key, base_url, model)` 三元组。`tests/test_extract_live.py` 里的 OPENAI_COMPAT_* 环境变量就是为这个准备的。
 
 **Q: 为什么不用 LangChain？**
@@ -441,14 +433,6 @@ A: 能但请慎重——闭集原语是 schema 的核心约束。流程：
 3. 在 `Measurement._primitive_params` validator 加参数验证
 4. 在 `_SYSTEM_PROMPT` 加新原语描述 + 用法
 5. 加对应的 test 验证 schema 正确性
-
----
-
-## 鸣谢与参考
-
-- 项目动机来自一段微信聊天（见 `image1.png`）
-- 技术路线来自后续讨论（见 `image2.png`）
-- 「Claude testbench 能力强于 mimo v2.5 pro」这一观察来自 **张托肯** 与作者的交流（参见 `image1.png`）
 
 ---
 
@@ -476,7 +460,7 @@ A: 能但请慎重——闭集原语是 schema 的核心约束。流程：
 
 - [One-line pitch](#one-line-pitch)
 - [Why this project exists](#why-this-project-exists)
-- [The full vision (image 2)](#the-full-vision-image-2)
+- [The full vision (pipeline)](#the-full-vision-pipeline)
 - [What v0 actually delivers](#what-v0-actually-delivers)
 - [Quick start](#quick-start)
 - [Repository layout](#repository-layout)
@@ -490,7 +474,6 @@ A: 能但请慎重——闭集原语是 schema 的核心约束。流程：
 - [Roadmap](#roadmap)
 - [Testing & quality](#testing--quality)
 - [FAQ](#faq)
-- [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -548,7 +531,7 @@ operates reliably at this semantic level.
 
 ---
 
-## The full vision (image 2)
+## The full vision (pipeline)
 
 ```
 ┌──────────────┐
@@ -576,10 +559,6 @@ operates reliably at this semantic level.
 └──────────────────┘
 ```
 
-The original screenshots driving this vision are committed at the repo root
-as `image1.png` and `image2.png`, with a full mapping to current code in
-`docs/project_overview.md`.
-
 ---
 
 ## What v0 actually delivers
@@ -594,8 +573,8 @@ Concretely:
 We took one realistic case — a 5-transistor differential-pair OTA with two
 specs (DC gain & UGB) — and **walked the entire pipeline by hand**: write
 the NL, write the IR, write the DUT, write the testbench, run ngspice,
-extract measurements, judge pass/fail. Every time something on the figure
-turned out to be silently missing, we wrote it down.
+extract measurements, judge pass/fail. Every time something turned out to
+be silently missing, we wrote it down.
 
 The walkthrough produced a **27-item punch list**:
 - 11 **schema gaps** (what the IR needs to express)
@@ -606,8 +585,8 @@ See `examples/01_diff_pair_ota/trace.md` (380+ lines).
 
 ### ② A strict IR schema (Step 2)
 
-A pydantic v2 schema that locks down the "structured TestPlan" shape from
-image 2. **10 of the 11 schema gaps are resolved in-IR**; the last one
+A pydantic v2 schema that locks down the structured TestPlan shape.
+**10 of the 11 schema gaps are resolved in-IR**; the last one
 (VDD / bias / Vin_cm) is explicitly deferred to a future `PDKContext` data
 structure.
 
@@ -625,7 +604,7 @@ the same validation. Only the SDK wrapper differs:
 | Function | Endpoint |
 |---|---|
 | `extract_with_anthropic` | Anthropic direct (api.anthropic.com), with prompt caching |
-| `extract_with_openai_compatible` | Any OpenAI-protocol endpoint: OpenAI direct / OpenRouter / Xiaomi MiMo / Alibaba DashScope / local vLLM / etc. |
+| `extract_with_openai_compatible` | Any OpenAI-protocol endpoint: OpenAI direct / OpenRouter / Alibaba DashScope / other compatible platforms / local vLLM / etc. |
 
 Code: `src/spec2testbench/extract.py` + `src/spec2testbench/evaluate.py`.
 
@@ -675,7 +654,7 @@ export OPENAI_COMPAT_MODEL=anthropic/claude-sonnet-4.6
 uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
 ```
 
-**Xiaomi MiMo or any other OpenAI-compatible platform:**
+**Any other OpenAI-compatible platform:**
 ```bash
 export OPENAI_COMPAT_API_KEY=...
 export OPENAI_COMPAT_BASE_URL=https://<their-endpoint>/v1
@@ -701,14 +680,9 @@ grep -E 'dc_gain_lin|ugb' testbench.log
 spec2testbench/
 ├── README.md                          ← you are here
 │
-├── image1.png  image2.png             ← original motivation + pipeline screenshots
-│
 ├── pyproject.toml                     ← uv project; deps: pydantic / anthropic / openai / pytest / ruff
 ├── uv.lock                            ← committed for reproducibility
 ├── .python-version                    ← pinned to 3.13
-│
-├── docs/
-│   └── project_overview.md            ← detailed mapping: image-2 targets vs current code
 │
 ├── examples/
 │   └── 01_diff_pair_ota/              ← Running example: 5-T diff-pair OTA
@@ -736,7 +710,7 @@ spec2testbench/
 
 ### The IR — heart of the project
 
-`TestPlan` is the strictly-typed form of the structured JSON in image 2.
+`TestPlan` is the strictly-typed form of the structured intermediate data.
 Seven top-level sections cover *what to test, how to test it, and how to
 judge*:
 
@@ -752,9 +726,9 @@ class TestPlan(BaseModel):
     corners:       list[Corner]      # PVT corners
 ```
 
-**Why 7 sections instead of image-2's flat JSON?** As soon as two
-measurements share one analysis (e.g. DC gain and UGB both from one AC
-sweep), the flat form breaks. See Gap-B in `examples/01_diff_pair_ota/trace.md` §2.
+**Why 7 sections instead of a flat JSON?** As soon as two measurements
+share one analysis (e.g. DC gain and UGB both from one AC sweep), the
+flat form breaks. See Gap-B in `examples/01_diff_pair_ota/trace.md` §2.
 
 **Strict by design:**
 - `extra="forbid"` — extra fields are rejected outright
@@ -783,7 +757,7 @@ Each primitive:
 - Has closed semantics (precisely defines *how* to extract from the curve)
 - Has an explicit `output_unit` (required IR field)
 - Has required parameters validated by pydantic (crossing primitives must
-  carry `direction` — closing Gap-G's silent-bug class)
+  carry `direction` — closing the silent-bug class on direction loss)
 
 v0 ships exactly **2** primitives — enough for the current running example.
 New primitives get added deliberately, when a new running example surfaces
@@ -791,9 +765,9 @@ them (YAGNI).
 
 ### Cross-provider LLM extractor
 
-Per the memory rule `prefer-cross-provider-portability`: **no provider
-abstraction layer, no LangChain/LiteLLM glue.** Two parallel functions
-with identical signatures:
+Per the cross-provider-portability principle: **no provider abstraction
+layer, no LangChain/LiteLLM glue.** Two parallel functions with identical
+signatures:
 
 ```python
 def extract_with_anthropic(
@@ -850,9 +824,8 @@ binary "wrong".
 ### Running example: 5-T differential-pair OTA
 
 The foundation of the entire project. A textbook circuit + two simple
-specs, walked end-to-end by hand through every stage of image 2. The
-artifact `trace.md` is a 380+ line **engineering log** that records, per
-stage:
+specs, walked end-to-end by hand through every stage. The artifact
+`trace.md` is a 380+ line **engineering log** that records, per stage:
 
 - What the inputs were
 - What was hand-written, and why
@@ -880,8 +853,7 @@ Measured results: **DC gain = 66.11 dB (spec > 60 dB → PASS), UGB = 32.07 MHz
 > These thread through *every* part of the code, not decorative.
 
 1. **Cross-provider first.** Parallel `extract_with_<provider>` functions,
-   never a unified `Provider` interface. See
-   `memory/prefer_cross_provider_portability.md`.
+   never a unified `Provider` interface.
 
 2. **Strict schema, fail fast.** `extra="forbid"`, closed enums, cross-
    field validators. Reject malformed input *at the earliest boundary*
@@ -941,7 +913,7 @@ uv run ruff check         # lint
 
 ## FAQ
 
-**Q: Why does v0 stop at spec → IR? Image 2 wants executable testbench end-to-end.**
+**Q: Why does v0 stop at spec → IR? Don't we want executable testbench end-to-end?**
 A: The 27 trace items split across 4 distinct layers (IR schema / emitter
 / PDKContext / evaluator). Trying to do all of them at once means none of
 them go deep. Step 2 nails the IR layer; Step 5 will build the emitter on
@@ -953,7 +925,7 @@ hermetic for testing. v0 using ngspice doesn't mean ngspice-forever —
 the `MeasurementPrimitive` abstraction is precisely what lets a future
 emitter target Spectre, HSPICE, *or* ngspice.
 
-**Q: I don't have an Anthropic key, only an OpenRouter / Xiaomi MiMo key. Can I use this?**
+**Q: I don't have an Anthropic key, only an OpenRouter or other third-party platform key. Can I use this?**
 A: Yes. Use `extract_with_openai_compatible(...)` and pass your
 `(api_key, base_url, model)` triple. The `OPENAI_COMPAT_*` env vars in
 `tests/test_extract_live.py` are designed exactly for this.
@@ -972,16 +944,6 @@ invariant. The recipe:
 3. Extend `Measurement._primitive_params` to validate its parameters
 4. Document the primitive's semantics + use cases in `_SYSTEM_PROMPT`
 5. Add tests asserting the validator behaviour
-
----
-
-## Acknowledgements
-
-- Project motivation comes from a WeChat conversation (`image1.png`)
-- The pipeline sketch comes from the same thread (`image2.png`)
-- The observation that "Claude's testbench ability is much stronger than
-  mimo v2.5 pro" is from a conversation with **张托肯 (Zhang Tuoken)**,
-  visible in `image1.png`.
 
 ---
 

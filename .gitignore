@@ -38,3 +38,9 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# ── Private-source materials (chat screenshots etc.) ───────
+# Defensive: chat-sourced PNGs must never re-enter the repo.
+image1.png
+image2.png
+*.chat.png

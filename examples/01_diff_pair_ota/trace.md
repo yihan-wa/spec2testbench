@@ -41,7 +41,7 @@ observations feed Step 2 of the project (固化 IR schema + 评估准则).
 
 ## 2. Gold IR (hand-written)
 
-Written from scratch, taking image 2's example as a rough template, deliberately
+Written from scratch using a flat single-record JSON as a rough straw-man, deliberately
 without consulting any existing pydantic schema. Comments (`//`) call out every
 field I had to invent or every place the NL spec was silent. JSONC, not strict JSON.
 

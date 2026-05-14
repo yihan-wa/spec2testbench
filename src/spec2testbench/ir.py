@@ -10,8 +10,8 @@ are deferred deliberately:
 - Emitter knowledge debts K1–K14: out of scope for Step 2 (Step 5).
 - Evaluator transform table E1–E2: out of scope for Step 2 (Step 4).
 
-The IR is intentionally split into seven top-level sections — image-2's flat
-JSON shape collapses as soon as one analysis feeds multiple measurements.
+The IR is intentionally split into seven top-level sections — a single flat
+JSON record collapses as soon as one analysis feeds multiple measurements.
 """
 
 from __future__ import annotations
