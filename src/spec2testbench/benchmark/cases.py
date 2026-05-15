@@ -501,15 +501,17 @@ def _gold_t2() -> TestPlan:
             ),
         ],
         pass_criteria=[
-            PassCriterion(measurement="ts", op=ComparisonOp.LT, value=200.0, spec_unit="ns"),
+            # "within 200 ns" in engineering specs is inclusive (le), not strict (lt).
+            PassCriterion(measurement="ts", op=ComparisonOp.LE, value=200.0, spec_unit="ns"),
         ],
         corners=[_tt27()],
     )
 
 
 _NL_T3 = (
-    "On the same 0 → 0.5 V step response (1 pF load), the output overshoot "
-    "must remain below 5%. Simulate 1 μs at 1 ns step, TT 27 °C."
+    "Apply a 0 → 0.5 V step at the differential input of the diff-pair OTA "
+    "and verify the output overshoot remains below 5%. Simulate 1 μs at "
+    "1 ns step. TT 27 °C, 1 pF load on output."
 )
 
 
@@ -523,7 +525,7 @@ def _gold_t3() -> TestPlan:
                 id="step_diff",
                 kind=StimulusKind.TRAN_STEP,
                 ports=["inp"],
-                step=TranStepParams(v1=0.0, v2=0.5, t_step=1e-7, tr=1e-10),
+                step=TranStepParams(v1=0.0, v2=0.5),
                 scope=Scope.ANALYSIS,
                 scope_analysis_id="tran_step",
             ),
@@ -717,7 +719,9 @@ def _gold_d1() -> TestPlan:
             ),
         ],
         pass_criteria=[
+            # "below 5 mV in magnitude" ⇒ |vos| < 5 mV ⇒ both bounds.
             PassCriterion(measurement="vos", op=ComparisonOp.LT, value=5.0, spec_unit="mV"),
+            PassCriterion(measurement="vos", op=ComparisonOp.GT, value=-5.0, spec_unit="mV"),
         ],
         corners=[_tt27()],
     )

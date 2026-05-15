@@ -25,6 +25,7 @@ the illusion of capability the ngspice-default emitter cannot back.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from enum import Enum
 from typing import Annotated, Any, ClassVar, Literal, Union
@@ -908,12 +909,17 @@ class TestPlan(BaseModel):
 #   - metadata (`meta.id`, `meta.nl_spec`) — these are labels, not content
 #   - element order in unordered lists (analyses, stimulus, loading,
 #     measurements, pass_criteria, corners) — they all run together
+#   - the specific string IDs chosen for analyses / stimulus / loading /
+#     measurements — these are also labels (extractor E-ID fix, 2026-05-15)
+#   - the unit form chosen for pass_criterion thresholds — (10, "MHz") ≡
+#     (1e7, "Hz") (extractor E-UNIT fix, 2026-05-15)
 #
 # Order DOES matter in `dut.subckt_ports` because that is the SPICE
 # instantiation call order; changing it changes the emitted netlist.
 #
-# Implementation: canonicalize both sides (strip ignored fields, sort
-# unordered lists by a stable JSON key), then compare as plain dicts.
+# Implementation: canonicalize both sides (strip ignored fields, normalize
+# units, canonicalize IDs via content hashes, sort unordered lists by a
+# stable JSON key), then compare as plain dicts.
 
 _UNORDERED_LIST_FIELDS = (
     "analyses",
@@ -926,20 +932,302 @@ _UNORDERED_LIST_FIELDS = (
 _META_FIELDS_IGNORED_FOR_EQUIVALENCE = ("id", "nl_spec")
 
 
+# SI-prefix unit conversion table for pass_criterion.spec_unit and
+# Tolerance.abs normalization. Maps each accepted unit symbol to
+# (canonical_unit, multiplier_to_canonical). Unknown units pass through
+# unchanged. The micro symbol "μ" is accepted as an alias for "u".
+_UNIT_CONVERSION: dict[str, tuple[str, float]] = {
+    # frequency → Hz
+    "Hz":  ("Hz", 1.0),
+    "kHz": ("Hz", 1.0e3),
+    "MHz": ("Hz", 1.0e6),
+    "GHz": ("Hz", 1.0e9),
+    # voltage → V
+    "V":  ("V", 1.0),
+    "mV": ("V", 1.0e-3),
+    "uV": ("V", 1.0e-6),
+    "μV": ("V", 1.0e-6),
+    "nV": ("V", 1.0e-9),
+    "pV": ("V", 1.0e-12),
+    # current → A
+    "A":  ("A", 1.0),
+    "mA": ("A", 1.0e-3),
+    "uA": ("A", 1.0e-6),
+    "μA": ("A", 1.0e-6),
+    "nA": ("A", 1.0e-9),
+    # time → s
+    "s":  ("s", 1.0),
+    "ms": ("s", 1.0e-3),
+    "us": ("s", 1.0e-6),
+    "μs": ("s", 1.0e-6),
+    "ns": ("s", 1.0e-9),
+    "ps": ("s", 1.0e-12),
+    # slew rate → V/s
+    "V/s":  ("V/s", 1.0),
+    "V/ms": ("V/s", 1.0e3),
+    "V/us": ("V/s", 1.0e6),
+    "V/μs": ("V/s", 1.0e6),
+    "V/ns": ("V/s", 1.0e9),
+    # noise PSD → V/sqrt(Hz)
+    "V/sqrt(Hz)":  ("V/sqrt(Hz)", 1.0),
+    "mV/sqrt(Hz)": ("V/sqrt(Hz)", 1.0e-3),
+    "uV/sqrt(Hz)": ("V/sqrt(Hz)", 1.0e-6),
+    "μV/sqrt(Hz)": ("V/sqrt(Hz)", 1.0e-6),
+    "nV/sqrt(Hz)": ("V/sqrt(Hz)", 1.0e-9),
+    "pV/sqrt(Hz)": ("V/sqrt(Hz)", 1.0e-12),
+    # transconductance → S
+    "S":  ("S", 1.0),
+    "mS": ("S", 1.0e-3),
+    "uS": ("S", 1.0e-6),
+    "μS": ("S", 1.0e-6),
+    "nS": ("S", 1.0e-9),
+    # dimensionless / log / angle — only canonicalize textual aliases
+    "dB":   ("dB", 1.0),
+    "deg":  ("deg", 1.0),
+    "%":    ("%", 1.0),
+}
+
+
 def _stable_key(item: Any) -> str:
     """Deterministic string key for sorting any JSON-serializable item."""
     return json.dumps(item, sort_keys=True, default=str)
+
+
+# Significant-figure threshold for all numeric normalization in canonical_form.
+# 6 sig figs ≈ 1 ppm — far above engineering-spec precision (typically 1-3
+# sig figs) and well below the double-precision ceiling. Set in one place so
+# unit conversion and recursive float normalization stay aligned.
+_FLOAT_SIG_FIGS = 6
+
+
+def _normalize_unit_pair(value: float, unit: str | None) -> tuple[float, str | None]:
+    """Convert a (value, unit) pair to canonical units; pass through unknowns.
+
+    Rounds the multiplied result to ``_FLOAT_SIG_FIGS`` significant figures
+    to absorb floating-point noise from scale multiplications (e.g.,
+    ``200 * 1e-9 == 2.0000000000000002e-07`` instead of the mathematically
+    exact ``2e-7``) as well as model-side numeric rounding (e.g., target_
+    magnitude emitted as 707.9458 vs computed 707.9457843841379).
+    """
+    if unit is None:
+        return value, None
+    if unit not in _UNIT_CONVERSION:
+        return value, unit
+    base, mult = _UNIT_CONVERSION[unit]
+    result = value * mult
+    return _to_sig_figs(result, _FLOAT_SIG_FIGS), base
+
+
+def _to_sig_figs(x: float, sig: int) -> float:
+    import math
+    if x == 0.0 or not math.isfinite(x):
+        return x
+    magnitude = math.floor(math.log10(abs(x)))
+    factor = 10 ** (sig - 1 - magnitude)
+    return round(x * factor) / factor
+
+
+def _normalize_floats_recursive(obj: Any, sig: int = _FLOAT_SIG_FIGS) -> Any:
+    """Recursively round every float in a JSON-like structure to ``sig`` significant
+    figures.
+
+    Absorbs LLM-vs-gold floating-point representation noise — e.g., a computed
+    ``target_magnitude`` of 707.95 (5 sig-fig rounded by the model) compared
+    against gold's ``1000.0 * 10 ** (-3.0 / 20.0) = 707.9457843841379``. At 12
+    sig figs both round to 707.95 (sig=5 figs of the model's output), well
+    below double-precision's ≈ 16-digit ceiling.
+    """
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, float):
+        return _to_sig_figs(obj, sig)
+    if isinstance(obj, dict):
+        return {k: _normalize_floats_recursive(v, sig) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_normalize_floats_recursive(x, sig) for x in obj]
+    if isinstance(obj, tuple):
+        return tuple(_normalize_floats_recursive(x, sig) for x in obj)
+    return obj
+
+
+_CROSS_REF_FIELDS_IN_MEASUREMENT = {
+    "from_analysis": "analyses",
+    "at_when_measurement": "measurements",
+}
+
+
+def _canonicalize_ids(d: dict[str, Any]) -> dict[str, Any]:
+    """Replace entity IDs with content-derived placeholders.
+
+    IDs on analyses / stimulus / loading / measurements are LLM-chosen
+    labels: two plans differing only in those names describe the same test.
+    This function reassigns each entity a canonical ID derived from its
+    content (with cross-references already substituted), then updates all
+    cross-refs to use the new IDs.
+
+    Iterates to a fixed point over the cross-ref graph; converges in
+    O(graph_depth) iterations (typically 2–3 for our schema).
+    """
+    cats: dict[str, list[dict]] = {
+        "analyses":     d.get("analyses", []),
+        "stimulus":     d.get("stimulus", []),
+        "loading":      d.get("loading", []),
+        "measurements": d.get("measurements", []),
+    }
+    prefix = {"analyses": "a", "stimulus": "s", "loading": "l", "measurements": "m"}
+
+    # Initial fingerprints are the original IDs themselves.
+    fp: dict[tuple[str, str], str] = {}
+    for cat, items in cats.items():
+        for ent in items:
+            fp[(cat, ent["id"])] = ent["id"]
+
+    def _ref_lookup(cat: str, oid: Any) -> Any:
+        if oid is None:
+            return oid
+        return fp.get((cat, oid), oid)
+
+    def _render(cat: str, ent: dict) -> dict:
+        """Entity content with cross-refs replaced by current fingerprints."""
+        out = {}
+        for k, v in ent.items():
+            if k == "id":
+                continue
+            if k == "from_analysis":
+                out[k] = _ref_lookup("analyses", v)
+            elif k == "scope_analysis_id":
+                out[k] = _ref_lookup("analyses", v)
+            elif k == "at_when_measurement":
+                out[k] = _ref_lookup("measurements", v)
+            elif k == "input_stimulus_id":
+                out[k] = _ref_lookup("stimulus", v)
+            elif k == "trigger_event" and isinstance(v, dict):
+                te = dict(v)
+                if te.get("stimulus_id") is not None:
+                    te["stimulus_id"] = _ref_lookup("stimulus", te["stimulus_id"])
+                out[k] = te
+            else:
+                out[k] = v
+        return out
+
+    def _hash(content: dict) -> str:
+        return hashlib.sha256(
+            json.dumps(content, sort_keys=True, default=str).encode()
+        ).hexdigest()[:12]
+
+    for _ in range(8):
+        new_fp: dict[tuple[str, str], str] = {}
+        for cat, items in cats.items():
+            for ent in items:
+                new_fp[(cat, ent["id"])] = f"__{prefix[cat]}_{_hash(_render(cat, ent))}"
+        if new_fp == fp:
+            break
+        fp = new_fp
+
+    # Apply rename throughout a deep copy
+    out = json.loads(json.dumps(d))
+    for cat in ("analyses", "stimulus", "loading", "measurements"):
+        for ent in out.get(cat, []):
+            ent["id"] = fp[(cat, ent["id"])]
+    for m in out.get("measurements", []):
+        if m.get("from_analysis") is not None:
+            m["from_analysis"] = fp[("analyses", _orig_id_for(m["from_analysis"], fp, "analyses"))]
+        if m.get("at_when_measurement") is not None:
+            m["at_when_measurement"] = fp[
+                ("measurements", _orig_id_for(m["at_when_measurement"], fp, "measurements"))
+            ]
+        if m.get("trigger_event") and isinstance(m["trigger_event"], dict):
+            sid = m["trigger_event"].get("stimulus_id")
+            if sid is not None:
+                m["trigger_event"]["stimulus_id"] = fp[
+                    ("stimulus", _orig_id_for(sid, fp, "stimulus"))
+                ]
+    for s in out.get("stimulus", []):
+        if s.get("scope_analysis_id") is not None:
+            s["scope_analysis_id"] = fp[
+                ("analyses", _orig_id_for(s["scope_analysis_id"], fp, "analyses"))
+            ]
+    for ld in out.get("loading", []):
+        if ld.get("scope_analysis_id") is not None:
+            ld["scope_analysis_id"] = fp[
+                ("analyses", _orig_id_for(ld["scope_analysis_id"], fp, "analyses"))
+            ]
+    for a in out.get("analyses", []):
+        if a.get("input_stimulus_id") is not None:
+            a["input_stimulus_id"] = fp[
+                ("stimulus", _orig_id_for(a["input_stimulus_id"], fp, "stimulus"))
+            ]
+    for pc in out.get("pass_criteria", []):
+        if pc.get("measurement") is not None:
+            pc["measurement"] = fp[
+                ("measurements", _orig_id_for(pc["measurement"], fp, "measurements"))
+            ]
+
+    return out
+
+
+def _orig_id_for(value: str, fp: dict[tuple[str, str], str], cat: str) -> str:
+    """Helper: given a possibly-already-renamed value, return the key under
+    which the rename map indexes it. Most of the time, `value` is the
+    original ID still and (cat, value) is the right key."""
+    if (cat, value) in fp:
+        return value
+    # Reverse-lookup: the value might already match a fingerprint
+    for (c, orig), fingerprint in fp.items():
+        if c == cat and fingerprint == value:
+            return orig
+    return value
 
 
 def canonical_form(plan: TestPlan) -> dict[str, Any]:
     """Return the canonical-dict view of a TestPlan for semantic comparison.
 
     Exposed because it is useful when a test fails — diffing the two canonical
-    forms shows exactly which field broke equivalence.
+    forms shows exactly which field broke equivalence. Note: with the
+    2026-05-15 evaluator hardening, entity IDs in the canonical form are
+    content-derived placeholders like ``__a_<hash>``, not the LLM-chosen
+    strings; diffs in non-ID fields remain readable.
     """
     d = plan.model_dump(mode="json")
     for f in _META_FIELDS_IGNORED_FOR_EQUIVALENCE:
         d["meta"].pop(f, None)
+
+    # Unit normalization on pass criteria (+ embedded tolerance.abs).
+    # Note: capture the original unit BEFORE rewriting pc["spec_unit"], because
+    # the tolerance.abs is denominated in that same original unit.
+    for pc in d.get("pass_criteria", []):
+        orig_unit = pc.get("spec_unit")
+        pc["value"], pc["spec_unit"] = _normalize_unit_pair(pc["value"], orig_unit)
+        tol = pc.get("tolerance")
+        if tol is not None and tol.get("abs") is not None:
+            tol["abs"], _ = _normalize_unit_pair(tol["abs"], orig_unit)
+
+    # Float normalization across the whole tree. Absorbs LLM-vs-gold float
+    # representation noise on any numeric field — e.g.,
+    # target_magnitude=707.9458 vs 707.9457843841379, t_step=1e-7 vs 1.0e-7,
+    # etc. Threshold lives in _FLOAT_SIG_FIGS.
+    d = _normalize_floats_recursive(d)
+
+    # Scope normalization for single-analysis plans. When a plan contains
+    # exactly one analysis, ``scope = "analysis", scope_analysis_id = <that
+    # analysis>`` is semantically identical to ``scope = "plan",
+    # scope_analysis_id = None`` — both mean "active during the only
+    # analysis". Canonicalize both to the plan form so the LLM's choice of
+    # which to emit does not break equivalence.
+    if len(d.get("analyses", [])) == 1:
+        only_id = d["analyses"][0]["id"]
+        for collection in ("stimulus", "loading"):
+            for ent in d.get(collection, []):
+                if (
+                    ent.get("scope") == Scope.ANALYSIS.value
+                    and ent.get("scope_analysis_id") == only_id
+                ):
+                    ent["scope"] = Scope.PLAN.value
+                    ent["scope_analysis_id"] = None
+
+    # ID canonicalization (must precede sorting because sort keys include IDs)
+    d = _canonicalize_ids(d)
+
     for field in _UNORDERED_LIST_FIELDS:
         d[field] = sorted(d.get(field, []), key=_stable_key)
     return d

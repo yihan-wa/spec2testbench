@@ -82,8 +82,13 @@ The TestPlan IR has these sections:
            sweep_source_role, sweep_start, sweep_stop, sweep_step — set ALL
            four for a sweep, NONE for a plain operating-point (.op).
 "NOISE"  — noise sweep. Fields: output_role, input_stimulus_id (id of an AC
-           stimulus that ngspice treats as the input source), f_start, f_stop,
+           STIMULUS — typically a single_ended_AC with magnitude=1.0 — that
+           ngspice treats as the noise input reference; this is the ONLY
+           AC source needed for the noise analysis), f_start, f_stop,
            sweep_style, points_per_decade.
+           DO NOT emit a separate AC analysis alongside a NOISE analysis
+           just to supply the input source; the source is a Stimulus, not
+           an Analysis. NOISE alone is sufficient.
 
 Anything outside these four (stb, pss, pac, pnoise, hb, qpss, envlp, dcmatch,
 acmatch, sp, xf, sens, pz, etc.) is NOT supported in v0 — do NOT emit them.
@@ -141,7 +146,10 @@ acmatch, sp, xf, sens, pz, etc.) is NOT supported in v0 — do NOT emit them.
      within ±tolerance_pct of the final value.
      REQUIRES: tolerance_pct (fraction, e.g. 0.001 for 0.1%), trigger_event
                = {stimulus_id, edge ∈ {"rising","falling","both"}}.
-     OPTIONAL: window.
+     OPTIONAL: window. Leave null unless the spec EXPLICITLY restricts the
+               measurement to a sub-interval of the TRAN run. trigger_event
+               already restricts the search to the post-trigger region —
+               you do not need to also constrain via window.
      NL triggers: "settling time to 0.1%", "稳定时间".
 
    "tran_overshoot_pct"
@@ -219,24 +227,48 @@ acmatch, sp, xf, sens, pz, etc.) is NOT supported in v0 — do NOT emit them.
                            REQUIRES magnitude. Use as the input source for
                            NoiseAnalysis (set noise.input_stimulus_id to this).
 
-   "DC_voltage"          — dc_value on the listed port; typical for bias pins.
-                           REQUIRES dc_value.
+   "DC_voltage"          — dc_value on the listed port. RARELY appropriate
+                           in v0; most static biasing (vdd, vss, bias_*,
+                           V_cm on the unused differential leg) is owned by
+                           the future PDKContext layer, NOT the IR. See
+                           rule 9 for details. REQUIRES dc_value.
 
    "tran_pulse"          — SPICE PULSE(v1 v2 td tr tf pw per).
-                           Carries a nested `pulse` object with fields v1, v2,
-                           td (default 0), tr (default 1e-9), tf (default 1e-9),
-                           pw, per. Use for step-response inputs feeding
-                           slew_rate / settling_time / overshoot.
+                           Parameters live INSIDE a nested object under the
+                           ``pulse`` field; do NOT place v1/v2/td/tr/tf/pw/per
+                           directly on the Stimulus.
+                           SHAPE: stimulus = {
+                             "kind": "tran_pulse", "ports": [...],
+                             "pulse": {"v1": ..., "v2": ..., "td": ...,
+                                       "tr": ..., "tf": ..., "pw": ..., "per": ...},
+                             ...
+                           }
+                           Defaults: td=0, tr=1e-9, tf=1e-9. Use for step-
+                           response inputs feeding slew_rate / settling_time /
+                           overshoot.
 
    "tran_sine"           — SPICE SIN(offset amp freq).
-                           Carries a nested `sine` object with dc_offset
-                           (default 0), amplitude, freq. Use as the fundamental
-                           tone for tran_thd.
+                           Parameters live INSIDE a nested object under the
+                           ``sine`` field.
+                           SHAPE: stimulus = {
+                             "kind": "tran_sine", "ports": [...],
+                             "sine": {"dc_offset": ..., "amplitude": ..., "freq": ...},
+                             ...
+                           }
+                           Defaults: dc_offset=0. Use as the fundamental tone
+                           for tran_thd.
 
-   "tran_step"           — one-shot V1→V2 step at time t_step. Carries a
-                           nested `step` object with v1, v2, t_step (default 0),
-                           tr (default 1e-12). Lighter than tran_pulse when only
-                           one edge is needed.
+   "tran_step"           — one-shot V1→V2 step at time t_step.
+                           Parameters live INSIDE a nested object under the
+                           ``step`` field; do NOT place v1/v2/t_step/tr
+                           directly on the Stimulus.
+                           SHAPE: stimulus = {
+                             "kind": "tran_step", "ports": [...],
+                             "step": {"v1": ..., "v2": ..., "t_step": ..., "tr": ...},
+                             ...
+                           }
+                           Defaults: t_step=0, tr=1e-12. Lighter than tran_pulse
+                           when only one edge is needed.
 
    "dc_sweep_source"     — declares this DUT-port stimulus is the source being
                            swept by a DcAnalysis. Set NO inline parameters; the
@@ -250,16 +282,39 @@ acmatch, sp, xf, sens, pz, etc.) is NOT supported in v0 — do NOT emit them.
      - "bias_<something>"  external bias-injection pin (NOT a signal)
 
 4. PASS-CRITERION OPERATOR — choose strictness from NL phrasing:
-     "should exceed" / "must be greater than" / "shall exceed"  → "gt"
-     "at least" / "≥" / "not less than" / "minimum of"          → "ge"
-     "below" / "must be less than" / "shall be less than"        → "lt"
-     "at most" / "≤" / "maximum of" / "no more than"             → "le"
-     "approximately" / "around" / "≈"                            → "approx_eq" + tolerance
+     "should exceed" / "must be greater than" / "shall exceed"     → "gt"
+     "at least" / "≥" / "not less than" / "minimum of"             → "ge"
+     "below" / "must be less than" / "shall be less than" /
+     "in under X" / "in less than X" / "strictly less than X"      → "lt"
+     "at most" / "≤" / "maximum of" / "no more than" /
+     "within X" / "within ±X"                                      → "le"
+     "approximately" / "around" / "≈"                              → "approx_eq" + tolerance
+
+   Note: "within X" is inclusive (le), reflecting the common engineering-
+   datasheet convention where listed bounds are worst-case maxima. Use lt
+   only when the spec explicitly marks the bound as strict.
 
 5. UNITS — always declare both:
      measurement.output_unit  = the raw unit the simulator will produce
      pass_criterion.spec_unit = the unit the spec phrased the threshold in
-   Examples:
+
+   CRITICAL — pass_criterion.value is the literal numeric value in the
+   units of spec_unit. DO NOT pre-convert to base units while keeping the
+   prefixed spec_unit. Concretely:
+     "UGB ≥ 10 MHz"  →  value = 10.0,  spec_unit = "MHz"   ✓
+                        value = 1e7,   spec_unit = "Hz"    ✓  (also OK)
+                        value = 1e7,   spec_unit = "MHz"   ✗  (10 PHz!)
+                        value = 10000000, spec_unit = "MHz" ✗  (10 PHz!)
+     "settling time < 100 ns"
+                     →  value = 100.0, spec_unit = "ns"    ✓
+                        value = 1e-7,  spec_unit = "s"     ✓
+                        value = 1e-7,  spec_unit = "ns"    ✗  (1e-7 ns = 0.1 fs!)
+
+   Rule of thumb: if you read off the threshold from the NL spec, copy
+   both the number and the units VERBATIM into value and spec_unit. The
+   evaluator will normalize internally.
+
+   Examples (full):
      "DC gain > 60 dB"               → output_unit="dB",          spec_unit="dB"
      "UGB ≥ 10 MHz"                  → output_unit="Hz",          spec_unit="MHz"
      "phase margin > 60°"            → output_unit="deg",         spec_unit="deg"
@@ -292,6 +347,150 @@ acmatch, sp, xf, sens, pz, etc.) is NOT supported in v0 — do NOT emit them.
     measurement's trigger_event = {stimulus_id, edge}. Set the stimulus's
     scope to "analysis" and scope_analysis_id to that TRAN analysis so it
     is not active during other (e.g. AC) analyses in the same plan.
+
+11. WHAT BELONGS TO PDKContext — DO NOT EMIT THESE AS STIMULI
+
+    The TestPlan IR represents ONLY the spec-derived test setup. Quiescent
+    biasing — the static DC values required to place the DUT at its
+    operating point — is the responsibility of a separate PDKContext data
+    structure that the EMITTER (not you) will combine with this IR at
+    emission time. The PDKContext owns:
+
+      • Supply rails: vdd, vss
+      • Dedicated bias-injection pins: bias_tail, bias_*, ibias, vbias
+      • Common-mode references: the "unused" leg of a differential pair
+        when the test stimulus drives only one leg (e.g. inn when the
+        test drives inp via tran_pulse / dc_sweep_source / single_ended_AC)
+      • All quiescent input biases for .op analyses
+
+    You MUST OMIT DC_voltage stimuli on these pins. The resulting IR
+    will NOT be runnable as a standalone SPICE testbench — that is
+    EXPECTED AND CORRECT. Step 5 of the project introduces the
+    PDKContext that fills these in.
+
+    CONCRETE RULES:
+
+    a) Single-port test stimuli (tran_pulse / tran_step / tran_sine /
+       dc_sweep_source / single_ended_AC driving only inp):
+       emit ONLY the test stimulus. DO NOT add a second stimulus on
+       inn (V_cm is supplied by PDKContext), bias_tail, vdd, or vss.
+
+    b) .op tests (DcAnalysis with all sweep_* fields null):
+       emit ZERO stimuli. The simulator's .op solver uses PDKContext-
+       supplied biases on every DUT pin to find the operating point.
+
+    c) balanced_differential_AC:
+       ONE stimulus already drives BOTH legs via ports=[inp, inn]. DO
+       NOT add a separate inn DC_voltage on top of it.
+
+    The ONLY legitimate uses of DC_voltage stimulus in v0 are:
+      - Spec-mandated overrides EXPLICITLY stated in the NL text
+        (e.g. "VDD overridden to 2.0 V" → Corner.supply_voltage_override,
+        which is preferred over a DC_voltage stimulus on vdd).
+      - DC biases that are part of the test SPEC, not the DUT's
+        quiescent setup. (Rare in v0.)
+
+    WHEN IN DOUBT: OMIT the DC_voltage stimulus. The PDKContext layer
+    fills it in.
+
+12. FIDELITY TO NL-SPEC NUMERIC VALUES
+
+    Preserve EVERY numeric value mentioned in the NL spec verbatim, including
+    timing parameters that have schema defaults. Do NOT silently substitute a
+    schema default when the spec gives an explicit value.
+
+    Examples:
+      - NL: "step at t = 100 ns (100 ps rise time)"
+        → tran_step.t_step = 1e-7, tran_step.tr = 1e-10
+        NOT t_step = 0.0 (default) or tr = 1e-12 (default)
+      - NL: "100 kHz, 0.8 V amplitude sine"
+        → tran_sine.freq = 1e5, tran_sine.amplitude = 0.8
+      - NL: "rise/fall time 1 ns"
+        → tran_pulse.tr = 1e-9, tran_pulse.tf = 1e-9 (BOTH; not just one)
+
+    Use schema defaults ONLY when the spec is silent about that parameter.
+
+13. on_role POLICY FOR PRIMITIVES WITH EXPLICIT ROLE FIELDS
+
+    Several primitives carry their own role field(s) that already identify
+    the meaningful port:
+      - dc_supply_current      → role lives in `supply_role`
+      - dc_offset_input_referred → role lives in `target_output_role`
+      - dc_gm                  → roles in `input_role` and `output_role`
+    For these primitives, leave ``on_role`` at its default ``"out"`` — it is
+    a placeholder and not semantically meaningful. The primitive's specific
+    role field carries the real signal.
+
+14. CANONICAL FORM FOR "−N dB" CROSSING MEASUREMENTS
+
+    NL phrasings such as "−3 dB rolloff" or "−6 dB crossing relative to the
+    low-frequency gain" should be emitted as a SINGLE
+    ``ac_freq_at_magnitude_crossing`` measurement with a pre-computed
+    ``target_magnitude``, not as a chain of two measurements (first
+    ac_low_freq_asymptote to get the DC gain, then a second measurement to
+    find the crossing).
+
+    Example: if the spec says "−3 dB rolloff given a DC gain of 60 dB":
+      target_magnitude = (10**(60.0/20.0)) * (10**(-3.0/20.0))
+                       ≈ 707.9457843841379
+      direction        = "falling"
+    One measurement. No need to introduce a separate DC-gain measurement
+    unless the spec also asks for the DC gain as its own pass criterion.
+
+15. DIFFERENTIAL-PAIR TRANSIENT STIMULI: SINGLE-PORT ONLY
+
+    For TRAN_PULSE / TRAN_STEP / TRAN_SINE / DC_SWEEP_SOURCE driving a
+    differential-pair DUT, set ``ports`` to a SINGLE-element list — the
+    test signal leg only (typically ``["inp"]``).
+
+    Do NOT emit ``ports = ["inp", "inn"]`` for these stimulus kinds. The IR
+    does not have a "differential PULSE / STEP / SINE" kind in v0; listing
+    both legs would either tie the two nodes to the same signal
+    (common-mode, usually not the intended test) or be ambiguous in the IR.
+    The other leg's common-mode reference is provided by PDKContext
+    (rule 11).
+
+    ``balanced_differential_AC`` is the ONLY stimulus kind that takes
+    ``ports = [inp, inn]``, because its semantics explicitly encode the
+    ±0.5 / 0° / 180° convention on the two legs.
+
+16. SLEW RATE / OTHER EDGE-POLARITY MEASUREMENTS: USE edge="both" WHEN BOTH
+
+    When the spec demands a property hold for BOTH rising and falling edges
+    (e.g., "slew rate on both rising and falling edges must exceed X V/μs"),
+    emit ONE measurement with ``edge = "both"`` and ONE pass_criterion
+    against it.
+
+    Do NOT split into two measurements (one with ``edge = "rising"``, one
+    with ``edge = "falling"``) and two pass_criteria. The ``"both"`` value
+    of the TransitionEdge enum exists specifically to express this case
+    compactly.
+
+17. MAGNITUDE / ABSOLUTE-VALUE BOUNDS: EMIT BOTH SIDES
+
+    NL phrasings that constrain the magnitude (i.e. absolute value) of a
+    signed measurement must be encoded as TWO pass_criteria — one upper
+    bound and one lower bound. The IR does not have an "abs-less-than"
+    operator; the conjunction of two bounded criteria is the canonical
+    encoding.
+
+    Trigger phrasings include:
+      "below X in magnitude", "less than X in magnitude"
+      "|x| < X" / "|x| ≤ X"
+      "absolute value below / less than X"
+      "within ±X" (when X is a signed bound on a possibly-negative value)
+
+    Example: "input-referred offset below 5 mV in magnitude"
+      pass_criteria = [
+        PassCriterion(measurement=vos, op=lt, value=+5.0, spec_unit=mV),
+        PassCriterion(measurement=vos, op=gt, value=-5.0, spec_unit=mV),
+      ]
+
+    Apply this rule whenever the measured quantity can plausibly take
+    either sign (offset, drift, mismatch, error voltages). For inherently
+    non-negative quantities (RMS noise, settling time, slew rate magnitude,
+    THD %), a single upper bound is sufficient and correct — the lower
+    bound at zero is implicit.
 """
 
 
@@ -386,7 +585,7 @@ def extract_with_openai_compatible(
     api_key: str,
     base_url: str,
     model: str,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
 ) -> TestPlan:
     """Extract IR using any OpenAI-compatible endpoint.
 
@@ -449,4 +648,31 @@ def extract_with_openai_compatible(
             f"raw={msg.tool_calls[0].function.arguments!r}"
         ) from e
 
+    args = _unwrap_stringified_nested(args)
     return TestPlan.model_validate(args)
+
+
+def _unwrap_stringified_nested(obj):
+    """Defensive shim for non-canonical OpenAI-compatible servers that pass
+    nested object/array values as JSON-encoded strings instead of native types.
+
+    Observed on Xiaomi MiMo (mimo-v2.5-pro, 2026-05-15): ``meta`` and ``dut``
+    came back as escaped JSON strings rather than nested objects, which
+    pydantic then rejected. Spec-compliant providers (Anthropic, OpenAI
+    direct, OpenRouter) emit native nested values and are untouched by this
+    pass — strings that don't look like JSON are passed through unchanged.
+    """
+    if isinstance(obj, str):
+        s = obj.strip()
+        if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
+            try:
+                parsed = json.loads(s)
+            except json.JSONDecodeError:
+                return obj
+            return _unwrap_stringified_nested(parsed)
+        return obj
+    if isinstance(obj, dict):
+        return {k: _unwrap_stringified_nested(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_unwrap_stringified_nested(x) for x in obj]
+    return obj

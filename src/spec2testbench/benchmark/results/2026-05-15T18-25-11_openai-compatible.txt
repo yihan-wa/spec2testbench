@@ -1,0 +1,17 @@
+
+════════════════════════════════════════════════════════════════════════
+Provider:    openai-compatible
+Model:       mimo-v2.5-pro
+Base URL:    https://api.xiaomimimo.com/v1
+Timestamp:   2026-05-15T18:18:09+0800
+────────────────────────────────────────────────────────────────────────
+Pass:        19/20  (95.0%)
+Fail:        1
+Error:       0
+Skipped:     0
+════════════════════════════════════════════════════════════════════════
+
+Failures / errors:
+
+  t2_settling_time  [fail]
+    - measurements[0].window: type mismatch (extracted=list, gold=NoneType)

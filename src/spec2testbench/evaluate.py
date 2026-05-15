@@ -7,10 +7,36 @@ future benchmark harness.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from .ir import TestPlan, canonical_form, semantic_equivalent
+
+# Canonical IDs assigned by canonical_form() look like ``__a_0123456789ab`` —
+# 12 hex chars derived from content. A diff at an ID-reference path showing
+# two such hashes is redundant: the underlying content difference (which
+# produced different hashes) will surface as a separate diff. Suppress these
+# to keep the report focused on actionable field-level mismatches.
+_CANONICAL_ID_RE = re.compile(r"^__[aslm]_[0-9a-f]{12}$")
+_ID_REF_LEAF_NAMES = frozenset({
+    "id",
+    "from_analysis",
+    "scope_analysis_id",
+    "at_when_measurement",
+    "input_stimulus_id",
+    "stimulus_id",
+    "measurement",
+})
+
+
+def _is_redundant_canonical_id_diff(path: str, a: Any, b: Any) -> bool:
+    leaf = path.rsplit(".", 1)[-1]
+    if leaf not in _ID_REF_LEAF_NAMES:
+        return False
+    if not (isinstance(a, str) and isinstance(b, str)):
+        return False
+    return bool(_CANONICAL_ID_RE.match(a) and _CANONICAL_ID_RE.match(b))
 
 
 @dataclass(frozen=True)
@@ -79,4 +105,6 @@ def _diff_paths(a: Any, b: Any, path: str = "") -> Iterator[str]:
         return
 
     if a != b:
+        if _is_redundant_canonical_id_diff(path, a, b):
+            return
         yield f"{path}: extracted={a!r} gold={b!r}"

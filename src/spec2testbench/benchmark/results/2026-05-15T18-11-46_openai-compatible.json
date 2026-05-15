@@ -1,0 +1,2770 @@
+{
+  "timestamp": "2026-05-15T18:04:03+0800",
+  "provider": "openai-compatible",
+  "model": "mimo-v2.5-pro",
+  "base_url": "https://api.xiaomimimo.com/v1",
+  "n_total": 20,
+  "n_pass": 20,
+  "n_fail": 0,
+  "n_error": 0,
+  "n_skipped": 0,
+  "cases": [
+    {
+      "case_id": "a1_diff_pair_gain_ugb",
+      "status": "pass",
+      "duration_s": 25.20575523376465,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a1_diff_pair_gain_ugb",
+          "nl_spec": "We need to verify the small-signal performance of our 5-transistor differential-pair OTA. The DC gain should exceed 60 dB, and the unity-gain bandwidth should be at least 10 MHz when driving a 1 pF capacitive load on the output. Please run AC analysis from 1 Hz up to 1 GHz. TT corner at 27 °C is sufficient for now — we'll add corners later."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac1",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 1000000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_ac1",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_dc_gain",
+            "from_analysis": "ac1",
+            "primitive": "ac_low_freq_asymptote",
+            "on_role": "out",
+            "output_unit": "dB",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          },
+          {
+            "id": "m_ugb",
+            "from_analysis": "ac1",
+            "primitive": "ac_freq_at_magnitude_crossing",
+            "on_role": "out",
+            "output_unit": "Hz",
+            "target_magnitude": 1.0,
+            "direction": "falling",
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_dc_gain",
+            "op": "gt",
+            "value": 60.0,
+            "spec_unit": "dB",
+            "tolerance": null
+          },
+          {
+            "measurement": "m_ugb",
+            "op": "ge",
+            "value": 10.0,
+            "spec_unit": "MHz",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a2_phase_margin",
+      "status": "pass",
+      "duration_s": 27.332783937454224,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a2_phase_margin",
+          "nl_spec": "Verify that the diff-pair OTA has a phase margin of at least 60 degrees with a 1 pF load on the output. Use AC analysis from 1 Hz to 1 GHz. TT corner at 27 °C."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac1",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 1000000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_diff_ac",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_ugb",
+            "from_analysis": "ac1",
+            "primitive": "ac_freq_at_magnitude_crossing",
+            "on_role": "out",
+            "output_unit": "Hz",
+            "target_magnitude": 1.0,
+            "direction": "falling",
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          },
+          {
+            "id": "m_pm",
+            "from_analysis": "ac1",
+            "primitive": "ac_phase_margin",
+            "on_role": "out",
+            "output_unit": "deg",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": "m_ugb",
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_pm",
+            "op": "ge",
+            "value": 60.0,
+            "spec_unit": "deg",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a3_gain_at_100k",
+      "status": "pass",
+      "duration_s": 20.47944712638855,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a3_gain_at_100k",
+          "nl_spec": "At 100 kHz the differential OTA must have at least 40 dB of voltage gain and the phase response at the same frequency must not lag beyond −45°. Run AC analysis from 1 Hz to 100 MHz with a 1 pF load. TT corner, 27 °C."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac_main",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 100000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_diff_ac",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_gain_at_100k",
+            "from_analysis": "ac_main",
+            "primitive": "ac_magnitude_at_freq",
+            "on_role": "out",
+            "output_unit": "dB",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": 100000.0,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          },
+          {
+            "id": "m_phase_at_100k",
+            "from_analysis": "ac_main",
+            "primitive": "ac_phase_at_freq",
+            "on_role": "out",
+            "output_unit": "deg",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": 100000.0,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_gain_at_100k",
+            "op": "ge",
+            "value": 40.0,
+            "spec_unit": "dB",
+            "tolerance": null
+          },
+          {
+            "measurement": "m_phase_at_100k",
+            "op": "ge",
+            "value": -45.0,
+            "spec_unit": "deg",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a4_minus_3db_corner",
+      "status": "pass",
+      "duration_s": 39.936224937438965,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a4_minus_3db_corner",
+          "nl_spec": "Locate the −3 dB high-frequency rolloff of our diff-pair amp. Given a DC gain of 60 dB (linear ≈ 1000), the −3 dB crossing should occur at a frequency of at least 1 MHz. AC sweep 1 Hz to 1 GHz, 1 pF load on output, TT 27 °C."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac_sweep",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 1000000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "diff_ac_in",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_m3db_freq",
+            "from_analysis": "ac_sweep",
+            "primitive": "ac_freq_at_magnitude_crossing",
+            "on_role": "out",
+            "output_unit": "Hz",
+            "target_magnitude": 707.9457843841379,
+            "direction": "falling",
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_m3db_freq",
+            "op": "ge",
+            "value": 1.0,
+            "spec_unit": "MHz",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a5_strict_ops",
+      "status": "pass",
+      "duration_s": 19.76252794265747,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a5_strict_ops",
+          "nl_spec": "DC gain shall strictly exceed 65 dB; the unity-gain bandwidth must be no less than 20 MHz. AC sweep from 1 Hz to 1 GHz, 1 pF capacitive load, TT 27 °C. Anything failing either threshold is unacceptable."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac1",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 1000000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_diff_ac",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_dc_gain",
+            "from_analysis": "ac1",
+            "primitive": "ac_low_freq_asymptote",
+            "on_role": "out",
+            "output_unit": "dB",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          },
+          {
+            "id": "m_ugb",
+            "from_analysis": "ac1",
+            "primitive": "ac_freq_at_magnitude_crossing",
+            "on_role": "out",
+            "output_unit": "Hz",
+            "target_magnitude": 1.0,
+            "direction": "falling",
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_dc_gain",
+            "op": "gt",
+            "value": 65.0,
+            "spec_unit": "dB",
+            "tolerance": null
+          },
+          {
+            "measurement": "m_ugb",
+            "op": "ge",
+            "value": 20.0,
+            "spec_unit": "MHz",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a6_units_mhz_phrasing",
+      "status": "pass",
+      "duration_s": 18.636672735214233,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a6_units_mhz_phrasing",
+          "nl_spec": "Open-loop gain should exceed 55 dB at low frequency, with a unity-gain bandwidth of at least 15 MHz. Use a 2 pF load and AC analysis from 10 Hz to 500 MHz. TT corner, 27 °C."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac1",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 10.0,
+            "f_stop": 500000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_diff_ac",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "2p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_dc_gain",
+            "from_analysis": "ac1",
+            "primitive": "ac_low_freq_asymptote",
+            "on_role": "out",
+            "output_unit": "dB",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          },
+          {
+            "id": "m_ugb",
+            "from_analysis": "ac1",
+            "primitive": "ac_freq_at_magnitude_crossing",
+            "on_role": "out",
+            "output_unit": "Hz",
+            "target_magnitude": 1.0,
+            "direction": "falling",
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_dc_gain",
+            "op": "gt",
+            "value": 55.0,
+            "spec_unit": "dB",
+            "tolerance": null
+          },
+          {
+            "measurement": "m_ugb",
+            "op": "ge",
+            "value": 15.0,
+            "spec_unit": "MHz",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a7_two_corners",
+      "status": "pass",
+      "duration_s": 21.299461126327515,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "a7_two_corners",
+          "nl_spec": "Across TT at 27 °C and SS at −40 °C corners, the diff-pair OTA must achieve DC gain at least 60 dB and UGB at least 10 MHz. AC 1 Hz to 1 GHz, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "ac_sweep",
+            "type": "AC",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 1000000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "ac_in",
+            "kind": "balanced_differential_AC",
+            "ports": [
+              "inp",
+              "inn"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "dc_gain",
+            "from_analysis": "ac_sweep",
+            "primitive": "ac_low_freq_asymptote",
+            "on_role": "out",
+            "output_unit": "dB",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          },
+          {
+            "id": "ugb",
+            "from_analysis": "ac_sweep",
+            "primitive": "ac_freq_at_magnitude_crossing",
+            "on_role": "out",
+            "output_unit": "Hz",
+            "target_magnitude": 1.0,
+            "direction": "falling",
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "dc_gain",
+            "op": "ge",
+            "value": 60.0,
+            "spec_unit": "dB",
+            "tolerance": null
+          },
+          {
+            "measurement": "ugb",
+            "op": "ge",
+            "value": 10.0,
+            "spec_unit": "MHz",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          },
+          {
+            "process": "SS",
+            "temperature_celsius": -40.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "t1_slew_rate_rising",
+      "status": "pass",
+      "duration_s": 23.53285312652588,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "t1_slew_rate_rising",
+          "nl_spec": "Apply a 0 V → 1 V pulse to the differential input of the diff-pair OTA (1 ns rise time, 5 μs pulse width, 10 μs period) and verify the rising-edge slew rate exceeds 10 V/μs. Simulate 20 μs at 10 ns step. TT 27 °C, 1 pF load on output."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "tran_main",
+            "type": "TRAN",
+            "t_step": 1e-08,
+            "t_stop": 2e-05,
+            "t_start": 0.0,
+            "uic": false
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_pulse",
+            "kind": "tran_pulse",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": {
+              "v1": 0.0,
+              "v2": 1.0,
+              "td": 0.0,
+              "tr": 1e-09,
+              "tf": 1e-09,
+              "pw": 5e-06,
+              "per": 1e-05
+            },
+            "sine": null,
+            "step": null,
+            "scope": "analysis",
+            "scope_analysis_id": "tran_main"
+          }
+        ],
+        "loading": [
+          {
+            "id": "load_cout",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "analysis",
+            "scope_analysis_id": "tran_main"
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_slew_rising",
+            "from_analysis": "tran_main",
+            "primitive": "tran_slew_rate",
+            "on_role": "out",
+            "output_unit": "V/s",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": "rising",
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_slew_rising",
+            "op": "gt",
+            "value": 10.0,
+            "spec_unit": "V/us",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "t2_settling_time",
+      "status": "pass",
+      "duration_s": 20.50159001350403,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "t2_settling_time",
+          "nl_spec": "Apply a 0 → 0.5 V step at the differential input at t = 100 ns (100 ps rise time). The output must settle to within ±0.1% of its final value within 200 ns of the trigger edge. Simulate 1 μs at 1 ns step. 1 pF load, TT 27 °C."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "tran1",
+            "type": "TRAN",
+            "t_step": 1e-09,
+            "t_stop": 1e-06,
+            "t_start": 0.0,
+            "uic": false
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim1",
+            "kind": "tran_step",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": {
+              "v1": 0.0,
+              "v2": 0.5,
+              "t_step": 1e-07,
+              "tr": 1e-10
+            },
+            "scope": "analysis",
+            "scope_analysis_id": "tran1"
+          }
+        ],
+        "loading": [
+          {
+            "id": "load1",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "meas1",
+            "from_analysis": "tran1",
+            "primitive": "tran_settling_time",
+            "on_role": "out",
+            "output_unit": "s",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": 0.001,
+            "trigger_event": {
+              "stimulus_id": "stim1",
+              "edge": "rising"
+            },
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "meas1",
+            "op": "le",
+            "value": 200.0,
+            "spec_unit": "ns",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "t3_overshoot",
+      "status": "pass",
+      "duration_s": 29.28386092185974,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "t3_overshoot",
+          "nl_spec": "Apply a 0 → 0.5 V step at the differential input of the diff-pair OTA and verify the output overshoot remains below 5%. Simulate 1 μs at 1 ns step. TT 27 °C, 1 pF load on output."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "tran_step_resp",
+            "type": "TRAN",
+            "t_step": 1e-09,
+            "t_stop": 1e-06,
+            "t_start": 0.0,
+            "uic": false
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "step_inp",
+            "kind": "tran_step",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": {
+              "v1": 0.0,
+              "v2": 0.5,
+              "t_step": 0.0,
+              "tr": 1e-12
+            },
+            "scope": "analysis",
+            "scope_analysis_id": "tran_step_resp"
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "overshoot",
+            "from_analysis": "tran_step_resp",
+            "primitive": "tran_overshoot_pct",
+            "on_role": "out",
+            "output_unit": "%",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "overshoot",
+            "op": "lt",
+            "value": 5.0,
+            "spec_unit": "%",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "t4_peak_to_peak_swing",
+      "status": "pass",
+      "duration_s": 14.564969778060913,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "t4_peak_to_peak_swing",
+          "nl_spec": "Drive the diff-pair OTA with a 100 kHz, 0.8 V amplitude single-tone sine input on the positive leg and confirm the peak-to-peak output voltage is at least 1.5 V. Simulate 100 μs at 100 ns step. TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "tran1",
+            "type": "TRAN",
+            "t_step": 1e-07,
+            "t_stop": 0.0001,
+            "t_start": 0.0,
+            "uic": false
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "sine_in",
+            "kind": "tran_sine",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": {
+              "dc_offset": 0.0,
+              "amplitude": 0.8,
+              "freq": 100000.0
+            },
+            "step": null,
+            "scope": "analysis",
+            "scope_analysis_id": "tran1"
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "analysis",
+            "scope_analysis_id": "tran1"
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_vopp",
+            "from_analysis": "tran1",
+            "primitive": "tran_peak_to_peak",
+            "on_role": "out",
+            "output_unit": "V",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_vopp",
+            "op": "ge",
+            "value": 1.5,
+            "spec_unit": "V",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "t5_thd_1k",
+      "status": "pass",
+      "duration_s": 17.179476976394653,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "t5_thd_1k",
+          "nl_spec": "At a 1 kHz single-tone input with 0.5 V amplitude, total harmonic distortion (first 9 harmonics) must be below 1%. Simulate 5 ms at 1 μs step. TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "tran_main",
+            "type": "TRAN",
+            "t_step": 1e-06,
+            "t_stop": 0.005,
+            "t_start": 0.0,
+            "uic": false
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "sine_1k",
+            "kind": "tran_sine",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": {
+              "dc_offset": 0.0,
+              "amplitude": 0.5,
+              "freq": 1000.0
+            },
+            "step": null,
+            "scope": "analysis",
+            "scope_analysis_id": "tran_main"
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_thd",
+            "from_analysis": "tran_main",
+            "primitive": "tran_thd",
+            "on_role": "out",
+            "output_unit": "%",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": 1000.0,
+            "num_harmonics": 9,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_thd",
+            "op": "lt",
+            "value": 1.0,
+            "spec_unit": "%",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "t6_slew_rate_both_edges",
+      "status": "pass",
+      "duration_s": 24.335642099380493,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "t6_slew_rate_both_edges",
+          "nl_spec": "Drive the diff-pair OTA with a 1 MHz, 50% duty-cycle square-wave input swinging 0 V to 1.2 V (rise/fall time 1 ns). The slew rate on both rising and falling edges must exceed 8 V/μs. Simulate 10 μs at 1 ns step, TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "tran1",
+            "type": "TRAN",
+            "t_step": 1e-09,
+            "t_stop": 1e-05,
+            "t_start": 0.0,
+            "uic": false
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "sqw_inp",
+            "kind": "tran_pulse",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": {
+              "v1": 0.0,
+              "v2": 1.2,
+              "td": 0.0,
+              "tr": 1e-09,
+              "tf": 1e-09,
+              "pw": 5e-07,
+              "per": 1e-06
+            },
+            "sine": null,
+            "step": null,
+            "scope": "analysis",
+            "scope_analysis_id": "tran1"
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "sr_both",
+            "from_analysis": "tran1",
+            "primitive": "tran_slew_rate",
+            "on_role": "out",
+            "output_unit": "V/s",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": "both",
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "sr_both",
+            "op": "gt",
+            "value": 8.0,
+            "spec_unit": "V/us",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "d1_input_referred_offset",
+      "status": "pass",
+      "duration_s": 30.209808826446533,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "d1_input_referred_offset",
+          "nl_spec": "Sweep the differential input from −10 mV to +10 mV in 100 μV steps and extract the input-referred offset (i.e., the input voltage at which the output crosses mid-rail). The offset must be below 5 mV in magnitude. TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "dc_sweep",
+            "type": "DC",
+            "sweep_source_role": "inp",
+            "sweep_start": -0.01,
+            "sweep_stop": 0.01,
+            "sweep_step": 0.0001
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_inp_sweep",
+            "kind": "dc_sweep_source",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "load_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "vos",
+            "from_analysis": "dc_sweep",
+            "primitive": "dc_offset_input_referred",
+            "on_role": "out",
+            "output_unit": "V",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": "out",
+            "target_output_value": "midrail",
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "vos",
+            "op": "lt",
+            "value": 5.0,
+            "spec_unit": "mV",
+            "tolerance": null
+          },
+          {
+            "measurement": "vos",
+            "op": "gt",
+            "value": -5.0,
+            "spec_unit": "mV",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "d2_output_swing_range",
+      "status": "pass",
+      "duration_s": 24.06845211982727,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "d2_output_swing_range",
+          "nl_spec": "Sweep the differential input from 0 V to 1.8 V in 10 mV steps and verify the output swing range (max minus min) exceeds 1.5 V. TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "dc_sweep",
+            "type": "DC",
+            "sweep_source_role": "inp",
+            "sweep_start": 0.0,
+            "sweep_stop": 1.8,
+            "sweep_step": 0.01
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_inp_sweep",
+            "kind": "dc_sweep_source",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "load_out_cap",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_swing_range",
+            "from_analysis": "dc_sweep",
+            "primitive": "dc_output_swing_range",
+            "on_role": "out",
+            "output_unit": "V",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": "range",
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_swing_range",
+            "op": "gt",
+            "value": 1.5,
+            "spec_unit": "V",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "d3_quiescent_current",
+      "status": "pass",
+      "duration_s": 11.98360013961792,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "d3_quiescent_current",
+          "nl_spec": "At the quiescent operating point (no input swing), the supply current drawn from VDD must remain at most 100 μA. TT 27 °C."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "dc_op",
+            "type": "DC",
+            "sweep_source_role": null,
+            "sweep_start": null,
+            "sweep_stop": null,
+            "sweep_step": null
+          }
+        ],
+        "stimulus": [],
+        "loading": [],
+        "measurements": [
+          {
+            "id": "iq_vdd",
+            "from_analysis": "dc_op",
+            "primitive": "dc_supply_current",
+            "on_role": "out",
+            "output_unit": "A",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": "vdd",
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "iq_vdd",
+            "op": "le",
+            "value": 100.0,
+            "spec_unit": "uA",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "d4_gm_at_zero",
+      "status": "pass",
+      "duration_s": 19.993633031845093,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "d4_gm_at_zero",
+          "nl_spec": "At zero differential-input bias, the small-signal transconductance from the positive input to the output must exceed 500 μS. Use a fine DC sweep around 0 V (1 mV steps from −5 mV to +5 mV). TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "dc_sweep_inp",
+            "type": "DC",
+            "sweep_source_role": "inp",
+            "sweep_start": -0.005,
+            "sweep_stop": 0.005,
+            "sweep_step": 0.001
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_inp_sweep",
+            "kind": "dc_sweep_source",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "load_out_pF",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_gm_at_zero",
+            "from_analysis": "dc_sweep_inp",
+            "primitive": "dc_gm",
+            "on_role": "out",
+            "output_unit": "S",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": "inp",
+            "output_role": "out",
+            "at_bias_value": 0.0,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_gm_at_zero",
+            "op": "gt",
+            "value": 500.0,
+            "spec_unit": "uS",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "d5_vout_max_corners",
+      "status": "pass",
+      "duration_s": 41.26722717285156,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "d5_vout_max_corners",
+          "nl_spec": "Across TT 27 °C and FF 85 °C corners, the maximum output voltage achievable on the diff-pair OTA must be at least 1.6 V. Sweep the differential input from 0 V to 1.8 V in 10 mV steps, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "dc_sweep",
+            "type": "DC",
+            "sweep_source_role": "inp",
+            "sweep_start": 0.0,
+            "sweep_stop": 1.8,
+            "sweep_step": 0.01
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "stim_in",
+            "kind": "dc_sweep_source",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": null,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "analysis",
+            "scope_analysis_id": "dc_sweep"
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "analysis",
+            "scope_analysis_id": "dc_sweep"
+          }
+        ],
+        "measurements": [
+          {
+            "id": "m_vout_max",
+            "from_analysis": "dc_sweep",
+            "primitive": "dc_output_swing_range",
+            "on_role": "out",
+            "output_unit": "V",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": "max",
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "m_vout_max",
+            "op": "ge",
+            "value": 1.6,
+            "spec_unit": "V",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          },
+          {
+            "process": "FF",
+            "temperature_celsius": 85.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "n1_psd_at_1k",
+      "status": "pass",
+      "duration_s": 14.053317070007324,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "n1_psd_at_1k",
+          "nl_spec": "Input-referred voltage-noise PSD at 1 kHz must be below 50 nV/√Hz. Run noise analysis from 0.1 Hz to 10 MHz using the AC source at the positive input as the reference. TT 27 °C, 1 pF load."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "noise_ac",
+            "type": "NOISE",
+            "output_role": "out",
+            "input_stimulus_id": "ac_in",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 0.1,
+            "f_stop": 10000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "ac_in",
+            "kind": "single_ended_AC",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "cl_out",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "noise_psd_1k",
+            "from_analysis": "noise_ac",
+            "primitive": "noise_input_referred_at_freq",
+            "on_role": "out",
+            "output_unit": "V/sqrt(Hz)",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": 1000.0,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": null,
+            "f_high": null,
+            "referred_to": null
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "noise_psd_1k",
+            "op": "lt",
+            "value": 50.0,
+            "spec_unit": "nV/sqrt(Hz)",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "n2_integrated_rms_audio",
+      "status": "pass",
+      "duration_s": 19.4556782245636,
+      "differences": [],
+      "error": null,
+      "extracted_plan_json": {
+        "meta": {
+          "schema_version": 1,
+          "id": "n2_integrated_rms_audio",
+          "nl_spec": "Integrated input-referred noise from 20 Hz to 20 kHz (audio band) must be below 10 μV RMS. Noise sweep 1 Hz to 1 MHz, TT 27 °C, 1 pF load. Use the AC source at the positive input as the noise reference."
+        },
+        "dut": {
+          "name": "diff_pair_ota_5t",
+          "netlist_path": "examples/01_diff_pair_ota/dut.cir",
+          "subckt_ports": [
+            {
+              "name": "vinp",
+              "role": "inp"
+            },
+            {
+              "name": "vinn",
+              "role": "inn"
+            },
+            {
+              "name": "vout",
+              "role": "out"
+            },
+            {
+              "name": "vbias",
+              "role": "bias_tail"
+            },
+            {
+              "name": "vdd",
+              "role": "vdd"
+            },
+            {
+              "name": "0",
+              "role": "vss"
+            }
+          ]
+        },
+        "analyses": [
+          {
+            "id": "noise_sweep",
+            "type": "NOISE",
+            "output_role": "out",
+            "input_stimulus_id": "ac_inp_ref",
+            "sweep_style": "dec",
+            "points_per_decade": 20,
+            "f_start": 1.0,
+            "f_stop": 1000000.0
+          }
+        ],
+        "stimulus": [
+          {
+            "id": "ac_inp_ref",
+            "kind": "single_ended_AC",
+            "ports": [
+              "inp"
+            ],
+            "magnitude": 1.0,
+            "dc_value": null,
+            "pulse": null,
+            "sine": null,
+            "step": null,
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "loading": [
+          {
+            "id": "c_load",
+            "kind": "C",
+            "value": "1p",
+            "from_role": "out",
+            "to_role": "vss",
+            "scope": "plan",
+            "scope_analysis_id": null
+          }
+        ],
+        "measurements": [
+          {
+            "id": "noise_int_rms_audio",
+            "from_analysis": "noise_sweep",
+            "primitive": "noise_integrated_rms",
+            "on_role": "out",
+            "output_unit": "V",
+            "target_magnitude": null,
+            "direction": null,
+            "at_freq": null,
+            "at_when_measurement": null,
+            "window": null,
+            "edge": null,
+            "tolerance_pct": null,
+            "trigger_event": null,
+            "fundamental_freq": null,
+            "num_harmonics": null,
+            "target_output_role": null,
+            "target_output_value": null,
+            "supply_role": null,
+            "input_role": null,
+            "output_role": null,
+            "at_bias_value": null,
+            "extreme": null,
+            "f_low": 20.0,
+            "f_high": 20000.0,
+            "referred_to": "input"
+          }
+        ],
+        "pass_criteria": [
+          {
+            "measurement": "noise_int_rms_audio",
+            "op": "lt",
+            "value": 10.0,
+            "spec_unit": "uV",
+            "tolerance": null
+          }
+        ],
+        "corners": [
+          {
+            "process": "TT",
+            "temperature_celsius": 27.0,
+            "supply_voltage_override": null
+          }
+        ]
+      }
+    }
+  ]
+}

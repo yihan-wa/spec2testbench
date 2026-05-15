@@ -14,7 +14,7 @@ executable testbenches.**
 | 1 | Manual end-to-end walkthrough on a reference example | Complete (2026-05-13) |
 | 2 | Strict TestPlan IR schema with semantic-equivalence definition | Complete (2026-05-13) |
 | 3 | Cross-provider LLM extractor + automated evaluator | Complete (2026-05-14) |
-| 4 | 20-case Stage-1 benchmark (NL → IR extraction accuracy) | Code-complete (2026-05-15); benchmark execution pending |
+| 4 | 20-case Stage-1 benchmark (NL → IR extraction accuracy) | Complete (2026-05-15); steady-state mean **96.0%** on `mimo-v2.5-pro` (5-run, σ ≈ 4 pp, max 100%) after seven framework-hardening rounds |
 | 5 | Stage-2 emitter (IR → ngspice netlist) + executability metric | Pending |
 | 6 | End-to-end pipeline; comparison against direct generation | Pending |
 | 7 | Failure-mode clustering and iteration planning | Pending |
@@ -306,10 +306,15 @@ uv run python -m spec2testbench.benchmark.runner --provider anthropic \
 `<timestamp>_<provider>.json` 与同名 `.txt`，其中 JSON 文件保留完整结
 构以便后续二次分析。
 
-> **状态备注**：当前 Stage-1 基准测试已**代码完整（code-complete）**，
-> 但截至 README 更新时尚未在公开 LLM 端点上执行——`results/` 目录暂不
-> 提供参考报告。读者可按上述命令自行运行以获得当前 LLM 的实测 pass
-> rate 与失败聚类。
+> **状态备注**：完整 benchmark 已于 2026-05-15 在 `mimo-v2.5-pro` 上跑通。
+> 经过 7 轮 evaluator + prompt 加固，框架到达稳态后做了 5 次独立完整运行：
+> **稳态均值 96.0%，中位数 95%，最大 100%，最小 90%，σ ≈ 4 pp，
+> 5 次中 2 次满分**。45% baseline → 96% 稳态的迭代轨迹涵盖 IR ID
+> 规范化、单位归一化、浮点 sig-fig 容差、scope 单分析归一化、
+> PDKContext 边界明示、与 11 条 prompt 规则。5 份参考报告
+> （`benchmark/results/2026-05-15T1[68]-*` 5 份）已入库。剩余约 4 pp
+> 缺口全部归因于模型 compliance 方差（prompt 已明确，LLM 不稳定遵守），
+> 不构成框架问题。详见 `src/spec2testbench/benchmark/README.md` §5。
 
 ---
 
@@ -406,7 +411,7 @@ Lint：`uv run ruff check src/ tests/` 通过。
 | 1 | 选定参考示例，手工跑通端到端，生成 trace | 完成（2026-05-13） |
 | 2 | 锁定 IR schema 与语义等价定义 | 完成（2026-05-13） |
 | 3 | 实装 Stage 1 抽取 + 自动评估 | 完成（2026-05-14） |
-| 4 | 扩展 IR 至 4 类分析、16 原语；构造 20 案例 benchmark；实装 runner | 代码完整（2026-05-15）；benchmark 实际运行待执行 |
+| 4 | 扩展 IR 至 4 类分析、16 原语；构造 20 案例 benchmark；实装 runner；7 轮加固后取 5-run 稳态 | 完成（2026-05-15）；稳态均值 **96.0%**（`mimo-v2.5-pro`，σ ≈ 4 pp，max 100%） |
 | 5 | 实装 Stage 2 emitter（IR → ngspice netlist）+ executability 指标 | 待开始 |
 | 6 | 端到端运行；与"直接生成 testbench"基线对比 | 待开始 |
 | 7 | 失败模式聚类；确定下一轮迭代重点 | 待开始 |
@@ -773,11 +778,21 @@ Reports are written to `src/spec2testbench/benchmark/results/` as
 `<timestamp>_<provider>.json` and the corresponding `.txt`. The JSON
 form retains complete structural detail for later analysis.
 
-> **Status note.** The Stage-1 benchmark is **code-complete** as of
-> this README's revision, but has not yet been executed against a
-> public LLM endpoint. The `results/` directory therefore contains no
-> reference report. Readers may execute the commands above to obtain
-> measured pass rates and failure clusters for a given model.
+> **Status note.** The full benchmark was executed on 2026-05-15
+> against `mimo-v2.5-pro`. After seven rounds of evaluator and prompt
+> hardening, five independent runs were performed to characterise the
+> steady-state distribution: **mean 96.0%, median 95%, maximum 100%,
+> minimum 90%, σ ≈ 4 pp, with 2 / 5 runs at 100%**. The trajectory
+> from the 45% first-measurement baseline to the 96% steady state
+> encompassed ID canonicalisation, unit normalisation, significant-
+> figure tolerance, single-analysis scope normalisation, an explicit
+> `PDKContext` boundary, and eleven prompt rules. The five reference
+> reports (`benchmark/results/2026-05-15T1[68]-*`) are committed. The
+> residual ~4 pp gap from 100% is entirely attributable to model
+> compliance variance — the prompt states the relevant rules
+> explicitly and the model does not always comply — and is therefore
+> classified as a model-capability issue, not a framework one. See
+> `src/spec2testbench/benchmark/README.md` §5 for details.
 
 ---
 

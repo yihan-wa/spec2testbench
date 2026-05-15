@@ -1,0 +1,22 @@
+
+════════════════════════════════════════════════════════════════════════
+Provider:    openai-compatible
+Model:       mimo-v2.5-pro
+Base URL:    https://api.xiaomimimo.com/v1
+Timestamp:   2026-05-15T16:49:36+0800
+────────────────────────────────────────────────────────────────────────
+Pass:        18/20  (90.0%)
+Fail:        2
+Error:       0
+Skipped:     0
+════════════════════════════════════════════════════════════════════════
+
+Failures / errors:
+
+  a5_strict_ops  [fail]
+    - stimulus[0].kind: extracted='single_ended_AC' gold='balanced_differential_AC'
+    - stimulus[0].ports: list length differs (extracted=1, gold=2)
+
+  t2_settling_time  [fail]
+    - pass_criteria[0].op: extracted='lt' gold='le'
+    - stimulus[0].step.tr: extracted=0.1 gold=1e-10

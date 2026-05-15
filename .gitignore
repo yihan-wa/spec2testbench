@@ -46,6 +46,14 @@ image2.png
 *.chat.png
 
 # ── Benchmark run artifacts ────────────────────────────────
-# Generated reports are timestamped; keep .gitkeep, ignore the rest.
+# Generated reports are timestamped; keep .gitkeep + committed reference
+# baselines; ignore everything else.
 src/spec2testbench/benchmark/results/*
 !src/spec2testbench/benchmark/results/.gitkeep
+# 5-run stability suite on mimo-v2.5-pro after full evaluator + prompt
+# hardening. Mean 96 % / median 95 % / min 90 % / max 100 %.
+!src/spec2testbench/benchmark/results/2026-05-15T16-58-37_openai-compatible.*
+!src/spec2testbench/benchmark/results/2026-05-15T18-04-03_openai-compatible.*
+!src/spec2testbench/benchmark/results/2026-05-15T18-11-46_openai-compatible.*
+!src/spec2testbench/benchmark/results/2026-05-15T18-18-09_openai-compatible.*
+!src/spec2testbench/benchmark/results/2026-05-15T18-25-11_openai-compatible.*
