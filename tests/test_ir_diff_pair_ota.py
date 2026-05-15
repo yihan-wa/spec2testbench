@@ -37,7 +37,7 @@ def test_gap_G_direction_required_for_crossing(gold_ir: TestPlan) -> None:
     """Gap G: crossing primitive without direction must be rejected."""
     bad = gold_ir.model_dump()
     bad["measurements"][1]["direction"] = None
-    with pytest.raises(ValueError, match="target_magnitude and direction"):
+    with pytest.raises(ValueError, match=r"requires field\(s\) \['direction'\]"):
         TestPlan.model_validate(bad)
 
 
@@ -45,7 +45,7 @@ def test_gap_F_asymptote_takes_no_params(gold_ir: TestPlan) -> None:
     """Asymptote primitive must not carry crossing params (avoids silent misuse)."""
     bad = gold_ir.model_dump()
     bad["measurements"][0]["target_magnitude"] = 1.0
-    with pytest.raises(ValueError, match="takes no target_magnitude"):
+    with pytest.raises(ValueError, match=r"must not set field\(s\) \['target_magnitude'\]"):
         TestPlan.model_validate(bad)
 
 

@@ -44,3 +44,8 @@ Thumbs.db
 image1.png
 image2.png
 *.chat.png
+
+# ── Benchmark run artifacts ────────────────────────────────
+# Generated reports are timestamped; keep .gitkeep, ignore the rest.
+src/spec2testbench/benchmark/results/*
+!src/spec2testbench/benchmark/results/.gitkeep

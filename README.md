@@ -1,289 +1,204 @@
-<div align="center">
-
 # spec2testbench
 
-**让 LLM 把自然语言模拟电路测试需求，自动翻译成可执行的 testbench。**
-**Turn natural-language analog test specs into executable testbenches, automatically, via LLMs.**
-
-🇨🇳 **中文（本部分）** &nbsp;·&nbsp; [🇬🇧 English version below ↓](#english-version)
-
-</div>
+**A research codebase for evaluating whether large language models can convert
+natural-language analog circuit verification specifications into structured,
+executable testbenches.**
+**研究代码库：评估大语言模型能否将自然语言形式的模拟电路验证规约转化为结构化、可执行的测试台。**
 
 ---
 
-## 目录
+## Project status / 项目状态
 
-- [一句话介绍](#一句话介绍)
-- [为什么做这个项目](#为什么做这个项目)
-- [完整愿景：pipeline](#完整愿景pipeline)
-- [当前实际做到了什么（v0）](#当前实际做到了什么v0)
-- [快速上手](#快速上手)
-- [代码库结构](#代码库结构)
-- [核心组件详解](#核心组件详解)
-  - [IR：项目的心脏](#ir项目的心脏)
-  - [闭集测量原语](#闭集测量原语)
-  - [跨厂商 LLM extractor](#跨厂商-llm-extractor)
-  - [自动评估器](#自动评估器)
-  - [Running example：5-管差分对 OTA](#running-example5-管差分对-ota)
-- [设计原则](#设计原则)
-- [路线图](#路线图)
-- [测试与质量](#测试与质量)
-- [常见问题](#常见问题)
+| Stage | Description | Status |
+|---|---|---|
+| 1 | Manual end-to-end walkthrough on a reference example | Complete (2026-05-13) |
+| 2 | Strict TestPlan IR schema with semantic-equivalence definition | Complete (2026-05-13) |
+| 3 | Cross-provider LLM extractor + automated evaluator | Complete (2026-05-14) |
+| 4 | 20-case Stage-1 benchmark (NL → IR extraction accuracy) | Code-complete (2026-05-15); benchmark execution pending |
+| 5 | Stage-2 emitter (IR → ngspice netlist) + executability metric | Pending |
+| 6 | End-to-end pipeline; comparison against direct generation | Pending |
+| 7 | Failure-mode clustering and iteration planning | Pending |
+
+The repository contains 157 offline tests covering the IR schema, semantic
+equivalence, primitive validation, and the benchmark case registry. Linting
+(`ruff`) passes. Live LLM extraction tests are gated on environment
+variables and skip by default.
 
 ---
 
-## 一句话介绍
+## Contents / 目录
 
-**`spec2testbench` 是一个研究项目，目的是回答：LLM 能不能把"DC gain > 60 dB"这种人话需求，自动翻译成 ngspice/Spectre/HSPICE 能直接运行的 testbench 文件？**
-
-如果答案是 **能**，那么 LLM-driven 的模拟电路自动化设计（autoresearch）这条路就能跑通——因为 agent 终于有了能"自我迭代验证"的反馈环。
-如果答案是 **不能**，至少这个仓库提供了一套**可量化诊断**框架，告诉你 **LLM 到底卡在哪一步**——是看不懂 spec？编不出原语？接错端口？还是搞不定方言？
-
----
-
-## 为什么做这个项目
-
-电路设计中的"autoresearch"愿景：
-
-```
-            ┌────────────┐
-            │  LLM agent │  "我设计一版电路"
-            └─────┬──────┘
-                  │
-                  ▼ (这里需要 testbench)
-            ┌─────────────┐
-            │  仿真反馈   │  "DC gain 实测 43 dB, UGB 12 MHz"
-            └─────┬───────┘
-                  │
-                  ▼
-            ┌─────────────┐
-            │  Agent 学习  │  "gain 不够，改大 W/L 再试"
-            └─────┬───────┘
-                  │   (回到上一步)
-                  └─────►
-```
-
-**这个循环里，testbench 是评判员。Agent 改 DUT，testbench 跑测试给反馈，agent 据此迭代。**
-
-但有一个瓶颈：**写一份"对的" testbench 需要专家手工做几小时**——要写对差分激励、要选对 corner、要避开仿真器方言陷阱、要……。Agent 一晚迭代 500 次，人写 testbench 一周写 5 份，**人是 autoresearch 的瓶颈**。
-
-`spec2testbench` 就是把"人话需求 → testbench"这一步**自动化**。
-
-为什么用 LLM？因为这一步本质是**带专家知识的结构化翻译**——LLM 是目前唯一能在这个语义层稳定操作的工具。
+- [中文部分](#中文版本)
+  - [1. 研究动机](#1-研究动机)
+  - [2. 系统总览](#2-系统总览)
+  - [3. TestPlan 中间表示](#3-testplan-中间表示)
+  - [4. 跨厂商 LLM 抽取](#4-跨厂商-llm-抽取)
+  - [5. Stage-1 基准测试](#5-stage-1-基准测试)
+  - [6. 实现细节](#6-实现细节)
+  - [7. 路线图](#7-路线图)
+  - [8. 设计原则](#8-设计原则)
+  - [9. 常见问题](#9-常见问题)
+- [English Section](#english-section)
 
 ---
 
-## 完整愿景：pipeline
+# 中文版本
 
-```
-┌──────────────┐
-│   NL spec    │   "DC gain should exceed 60 dB, UGB ≥ 10 MHz with 1pF load..."
-└──────┬───────┘
-       │  Stage 1: spec extraction        ← 本仓库 v0 实现的部分
-       ▼
-┌──────────────┐
-│  TestPlan IR │   结构化 JSON，pydantic 验证
-└──────┬───────┘
-       │
-       │  + DUT netlist (上游给)
-       │  + PDK context (PDK 提供)
-       │
-       │  Stage 2: testbench emission      ← v0 未实现，留给 Step 5
-       ▼
-┌──────────────────┐
-│ Executable spice │   .cir / .spice 文件
-│   testbench      │   首选 Spectre，次选 HSPICE，ngspice 兜底
-└──────┬───────────┘
-       │  Stage 3: simulate
-       ▼
-┌──────────────────┐
-│  pass / fail     │   分阶段评估：extract 对吗？emit 对吗？sim 对吗？verdict 对吗？
-└──────────────────┘
-```
+## 1. 研究动机
+
+模拟集成电路设计的自动化研究（以下简称 *autoresearch*）依赖一个反馈闭环：
+设计代理（LLM agent）提出电路方案，仿真器对其性能进行评估，代理据此迭代。
+此闭环中，**测试台（testbench）承担"评判员"的角色**——它将抽象的指标
+（DC gain、UGB、phase margin 等）翻译为可在 SPICE 类仿真器上执行的激励、
+分析与判定逻辑。
+
+然而，编写一份正确的 testbench 需要工程师在差分激励的对称性、工艺角的覆
+盖、仿真器方言陷阱、单位一致性等众多细节上做出精确决策；这一工作通常以
+"小时"为单位计量。代理的迭代速度通常以"分钟"乃至"秒"为单位，因此**人
+工编写 testbench 构成了 autoresearch 的关键瓶颈**。
+
+`spec2testbench` 旨在以 LLM 为工具，将"自然语言规约 → 可执行 testbench"
+这一翻译过程自动化。本仓库面向两个并行目标：
+
+1. **能力评估**：在量化框架下回答"当前的 LLM 是否具备这一翻译能力？"。
+2. **诊断工具**：当能力不足时，给出**字段级的失败定位**，以引导后续模
+   型与提示词改进。
+
+由于这一翻译过程本质上是"具备专家知识的结构化语义映射"，LLM 是目前少
+数能在此层级稳定操作的工具，使本研究具有时效性。
 
 ---
 
-## 当前实际做到了什么（v0）
+## 2. 系统总览
 
-**v0 范围：spec → IR 这一条**（pipeline 上半段）。下半段（IR → 可执行 netlist → 仿真 → verdict）作为后续步骤分阶段实装。
+完整流水线分为三个阶段：
 
-具体落地的三件事：
+```
+┌─────────────────┐
+│  自然语言规约    │   NL spec：DC gain ≥ 60 dB, UGB ≥ 10 MHz, ...
+└────────┬────────┘
+         │  Stage 1：spec extraction           ← v0 已实装
+         ▼
+┌─────────────────┐
+│  TestPlan IR    │   严格 JSON，pydantic 校验
+└────────┬────────┘
+         │  +  DUT netlist（上游输入）
+         │  +  PDK context（来自工艺库）
+         │  Stage 2：testbench emission        ← v0 留作 Step 5
+         ▼
+┌─────────────────┐
+│  可执行 netlist  │   .cir / .spice
+└────────┬────────┘
+         │  Stage 3：simulate
+         ▼
+┌─────────────────┐
+│   pass / fail   │   分阶段评估：extract / emit / sim / verdict
+└─────────────────┘
+```
 
-### ① 一份手工 walkthrough（Step 1）
+**v0 已落地的部分**：Stage 1（NL → IR）以及对其的自动化评估。
+**v0 未落地的部分**：Stage 2 与 Stage 3。emitter 接口已预留，目前抛出
+`NotImplementedError`，预计于 Step 5 实装。
 
-用一个真实例子（5-管差分对 OTA + DC gain & UGB 两条 spec），**手工**把整条 pipeline 从 NL 走到 ngspice 仿真结果，过程中每撞到一个"图上没说但实际必须解决"的问题就**系统记录下来**。
-
-撞到 **27 条 punch list**：
-- 11 条 **schema gaps**（IR 该长什么样）
-- 14 条 **emitter knowledge debts**（IR → netlist 翻译要从哪补充信息）
-- 2 条 **evaluator knowledge debts**（单位换算 / 操作符语义）
-
-详见：`examples/01_diff_pair_ota/trace.md`（380+ 行）
-
-### ② 严格的 IR schema（Step 2）
-
-用 pydantic v2 把结构化 TestPlan IR 的形态彻底锁死，**11 条 schema gap 中 10 条就地解决**，剩 1 条（VDD/bias/Vcm）显式推到未来的 PDKContext。
-
-代码：`src/spec2testbench/ir.py`（约 440 行）
-- 11 个 pydantic models
-- 8 个 enum（约束闭集值）
-- 5 个 cross-field validator（强制跨表引用合法）
-- `semantic_equivalent(a, b)` —— 自动判断两个 IR 是否"语义等价"，用于 benchmark
-
-### ③ 跨厂商 LLM extractor + 自动评估（Step 3）
-
-**两个并列的 extractor**，同一份系统提示词、同一份 schema，只是接的 SDK 不同：
-
-| 函数 | 接什么 |
-|---|---|
-| `extract_with_anthropic` | Anthropic 直连 (api.anthropic.com)，带 prompt caching |
-| `extract_with_openai_compatible` | OpenAI 协议端点：OpenAI 直连 / OpenRouter / 阿里 DashScope / 其他公司的兼容平台 / 本地 vLLM——任何说 OpenAI 协议的服务 |
-
-代码：`src/spec2testbench/extract.py` + `src/spec2testbench/evaluate.py`
+中间表示（IR）位于设计的核心：它将"测什么、怎么测、怎么判断通过"用一
+份严格类型化的结构表达，成为 LLM 输出验证、emitter 设计、评估器比对的
+共同基础。
 
 ---
 
-## 快速上手
+## 3. TestPlan 中间表示
 
-### 环境要求
+### 3.1 顶层结构
 
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/)（包/虚拟环境管理）
-- [ngspice](https://ngspice.sourceforge.io/) 45+（如果要跑 running example 仿真）
-- 至少一个 LLM API key（Anthropic / OpenRouter / 其他 OpenAI 兼容平台），如果要跑 live extraction
-
-### 安装
-
-```bash
-git clone <your-fork-url>.git
-cd spec2testbench
-uv sync             # 安装所有依赖到 .venv/
-```
-
-### 跑基础测试（不需要 API key）
-
-```bash
-uv run pytest -v
-# 期望: 23 passed, 2 skipped (live tests 没 key 会自动 skip)
-```
-
-`23 passed` 表示：IR schema 能完整表达 running example、JSON round-trip 守恒、所有 gap 验证规则生效、semantic equivalence 满足所有边界。
-
-### 跑 live extraction（需要 API key）
-
-**Anthropic 直连：**
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-uv run pytest tests/test_extract_live.py::test_extract_with_anthropic -v -s
-```
-
-**OpenRouter（任意模型，含 Claude）：**
-```bash
-export OPENAI_COMPAT_API_KEY=sk-or-...
-export OPENAI_COMPAT_BASE_URL=https://openrouter.ai/api/v1
-export OPENAI_COMPAT_MODEL=anthropic/claude-sonnet-4.6
-uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
-```
-
-**任意 OpenAI 兼容平台（替换为你的实际 endpoint 和模型）：**
-```bash
-export OPENAI_COMPAT_API_KEY=...
-export OPENAI_COMPAT_BASE_URL=https://<your-endpoint>/v1
-export OPENAI_COMPAT_MODEL=<their-model-id>
-uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
-```
-
-### 手工跑一遍 running example 的 ngspice 仿真
-
-```bash
-cd examples/01_diff_pair_ota
-ngspice -b testbench.cir -o testbench.log
-grep -E 'dc_gain_lin|ugb' testbench.log
-# 期望: dc_gain_lin = 2.019711e+03   (= 66.11 dB)
-#       ugb         = 3.206502e+07   (= 32.07 MHz)
-```
-
----
-
-## 代码库结构
-
-```
-spec2testbench/
-├── README.md                          ← 你正在读的这份
-│
-├── pyproject.toml                     ← uv 项目配置；deps: pydantic / anthropic / openai / pytest / ruff
-├── uv.lock                            ← 依赖锁文件（committed for reproducibility）
-├── .python-version                    ← 锁定 3.13
-│
-├── examples/
-│   └── 01_diff_pair_ota/              ← Running example：5-管差分对 OTA
-│       ├── trace.md                   ← 端到端 walkthrough + 27 条 punch list
-│       ├── dut.cir                    ← DUT netlist（5 个 MOSFET，level-1 模型）
-│       ├── testbench.cir              ← 手写完整 testbench（ngspice 可跑）
-│       └── testbench.log              ← 实际仿真输出（DC gain ≈ 66 dB, UGB ≈ 32 MHz）
-│
-├── src/spec2testbench/
-│   ├── __init__.py
-│   ├── ir.py                          ← 核心：TestPlan IR schema + semantic equivalence
-│   ├── extract.py                     ← 两个并列 LLM extractor
-│   └── evaluate.py                    ← 自动评估：抽出的 IR vs gold IR
-│
-└── tests/
-    ├── conftest.py                    ← 共享 fixtures（gold IR、NL、DUT metadata）
-    ├── test_ir_diff_pair_ota.py       ← 9 个：gold IR round-trip + 各 gap 验证
-    ├── test_ir_equivalence.py         ← 14 个：semantic equivalence 各边界
-    └── test_extract_live.py           ← 2 个：live LLM extraction（gated 在 API key）
-```
-
----
-
-## 核心组件详解
-
-### IR：项目的心脏
-
-`TestPlan` IR 是流水线中间的结构化数据的严格类型化形式。它把"测什么、怎么测、怎么判断通过"用 **7 个顶层 section** 表达出来：
+`TestPlan` 由七个顶层 section 组成：
 
 ```python
 class TestPlan(BaseModel):
-    meta:           Meta            # 元数据 + 原始 NL spec
-    dut:            Dut             # 被测电路 + 端口签名
-    analyses:       list[AcAnalysis]  # 仿真定义
-    stimulus:       list[Stimulus]    # 激励
-    loading:        list[Loading]     # 负载
-    measurements:   list[Measurement] # 测量（用闭集原语）
-    pass_criteria:  list[PassCriterion]  # 判定
-    corners:        list[Corner]      # 工艺角
+    meta:          Meta              # 元数据 + 原始 NL spec 文本
+    dut:           Dut               # 被测电路标识 + 端口签名
+    analyses:      list[Analysis]    # 仿真定义（多种类型的判别联合）
+    stimulus:      list[Stimulus]    # 激励源
+    loading:       list[Loading]     # 无源负载
+    measurements:  list[Measurement] # 从仿真曲线导出的标量
+    pass_criteria: list[PassCriterion]  # 判定规则
+    corners:       list[Corner]      # 工艺/温度/电源角点
 ```
 
-**为什么要拆 7 个 section 而不是一份扁平 JSON？** 因为只要有 ≥ 2 个测量共享一次仿真（典型情况：DC gain 和 UGB 都来自同一次 AC 扫频），扁平形态就崩了。详见 `examples/01_diff_pair_ota/trace.md` §2 中的 Gap-B 分析。
+之所以采用分段式结构而非扁平 JSON，原因在于：当两个测量共享同一次仿真
+（如 DC gain 与 UGB 均源自一次 AC 扫频）时，扁平结构无法消除冗余且容易
+引发不一致。详细分析见 `examples/01_diff_pair_ota/trace.md` 中的
+Gap-B 一节。
 
-**强约束：**
-- `extra="forbid"` —— 多写一个 schema 没定义的字段直接拒绝
-- 5 个 cross-field validator —— 例如 measurement 引用的 analysis id 必须存在
-- 闭集枚举 —— stimulus kind、measurement primitive、comparison op 都是限定取值
+### 3.2 分析类型覆盖
 
-这些约束的目的是：**LLM 抽错时给出精确、可反馈的错误信息**，便于未来在 agent loop 里自动修正。
+IR 在 v0 中覆盖四类仿真分析，均为 ngspice 原生支持：
 
-### 闭集测量原语
+| 分析类型 | IR 模型 | ngspice 对应 |
+|---|---|---|
+| AC（小信号交流扫频） | `AcAnalysis` | `.ac <style> <pts> <f_start> <f_stop>` |
+| TRAN（瞬态） | `TranAnalysis` | `.tran <t_step> <t_stop> <t_start> [uic]` |
+| DC（工作点或单源扫描） | `DcAnalysis` | `.op` 或 `.dc <Vsrc> <start> <stop> <step>` |
+| NOISE（噪声扫频） | `NoiseAnalysis` | `.noise v(<out>) <input_src> ...` |
 
-最重要的一个设计决策。"DC gain"、"UGB" 在物理上不是字段，是**取数方式**。直接用自然字符串会让 emitter / evaluator 之间约定崩塌。所以引入 **closed primitive vocabulary**：
+其余 23 类（`stb`、`pss`、`pac`、`pnoise`、`hb` 等周期稳态 / 谐波平衡 /
+S-参数家族）**未纳入 v0 enum**——因为 ngspice 不支持，强行加入会使 IR 表
+达力与 emitter 实际能力脱节。这些分析将在后续接入 Spectre / Xyce 等仿真
+器时另行扩展。
 
-```python
-class MeasurementPrimitive(str, Enum):
-    AC_LOW_FREQ_ASYMPTOTE       = "ac_low_freq_asymptote"        # → DC gain
-    AC_FREQ_AT_MAGNITUDE_CROSSING = "ac_freq_at_magnitude_crossing"  # → UGB / -3dB
+### 3.3 闭集测量原语
+
+"DC gain"、"UGB"、"phase margin" 等概念在物理意义上并非数据字段，而是
+**从仿真曲线提取标量的算法**。为消除自然语言字符串带来的 emitter / 评估
+器约定漂移，IR 采用**闭集测量原语词表**。v0 共定义 16 个原语：
+
+| 类别 | 原语 | 语义 | 必填参数 |
+|---|---|---|---|
+| AC | `ac_low_freq_asymptote` | \|H(f)\| 在 f = f_start 处 | — |
+| AC | `ac_freq_at_magnitude_crossing` | \|H(f)\| 等于阈值时的频率 | `target_magnitude`、`direction` |
+| AC | `ac_phase_at_freq` | ∠H(f) 在指定频率处 | `at_freq` 或 `at_when_measurement`（二者择一） |
+| AC | `ac_magnitude_at_freq` | \|H(f)\| 在指定频率处 | `at_freq` |
+| AC | `ac_phase_margin` | 180° + ∠H 在 UGB 处 | `at_when_measurement` |
+| TRAN | `tran_slew_rate` | 阶跃过渡的 10%–90% 摆率 | `edge` |
+| TRAN | `tran_settling_time` | 落入 ±tolerance 带的时间 | `tolerance_pct`、`trigger_event` |
+| TRAN | `tran_overshoot_pct` | 过冲百分比 | — |
+| TRAN | `tran_peak_to_peak` | 窗口内 max − min | — |
+| TRAN | `tran_thd` | 单音输入的总谐波失真 | `fundamental_freq` |
+| DC | `dc_offset_input_referred` | 输入折合失调电压 | `target_output_role`、`target_output_value` |
+| DC | `dc_output_swing_range` | DC 扫描下输出极值 | `extreme` ∈ {min, max, range} |
+| DC | `dc_supply_current` | 供电电流 | `supply_role` |
+| DC | `dc_gm` | 小信号跨导 | `input_role`、`output_role`、`at_bias_value` |
+| NOISE | `noise_input_referred_at_freq` | 输入折合噪声 PSD | `at_freq` |
+| NOISE | `noise_integrated_rms` | 频带积分 RMS 噪声 | `f_low`、`f_high`、`referred_to` |
+
+每个原语在 `Measurement` 模型上以**字段级 validator** 强制其必填参数存
+在、禁用参数不出现；此外 `_cross_refs` validator 强制原语类型与所引用
+`Analysis` 类型一致（例如 `tran_slew_rate` 不得引用 AC 分析）。这些约束
+共同保证：当 LLM 输出错位时，pydantic 在最早的边界拒绝并给出可定位的错
+误信息。
+
+### 3.4 语义等价
+
+为支持自动化基准评估，IR 定义了**语义等价**关系 `semantic_equivalent`：
+
+- 忽略 `meta.id` 与 `meta.nl_spec`——视为标签而非内容。
+- 六个顶层列表（`analyses`、`stimulus`、`loading`、`measurements`、
+  `pass_criteria`、`corners`）被视为**无序集合**比较。
+- `dut.subckt_ports` 保持**有序序列**比较——因其顺序对 SPICE
+  子电路实例化语义敏感。
+- 隐式默认值与显式默认值同一处理——由 pydantic 在序列化时统一展开。
+
+不等价时，评估器返回字段级 diff 列表，定位至具体路径与值，例如：
+
+```
+measurements[1].direction: extracted='rising' gold='falling'
+pass_criteria[0].value:    extracted=70.0       gold=60.0
 ```
 
-每个原语：
-- 语义闭合（精确定义"如何从仿真曲线取数"）
-- 单位明确（output_unit 是 IR 字段，必填）
-- 参数必填（crossing 类必须带 direction，杜绝方向语义丢失）
+---
 
-v0 只内置 2 个原语——只为当前 running example 服务。后续 example 出现新测量需求时再扩展（YAGNI）。
+## 4. 跨厂商 LLM 抽取
 
-### 跨厂商 LLM extractor
-
-**严格遵循跨厂商可移植原则**：**不**做厂商抽象层，**不**用 LangChain/LiteLLM 这种胶水库；写两个并列函数，签名完全一致：
+为避免对单一 LLM 厂商或中介库的耦合，extractor 模块采用"并列函数"模式：
 
 ```python
 def extract_with_anthropic(
@@ -298,371 +213,638 @@ def extract_with_openai_compatible(
 ) -> TestPlan: ...
 ```
 
-**两者共享：**
-- 同一份系统提示词（`_SYSTEM_PROMPT`）——所有"如何抽取"的知识都在这里
-- 同一份 schema：`TestPlan.model_json_schema()`——两边的 structured-output 机制都吃它
-- 同一份 pydantic 验证：`TestPlan.model_validate(...)`
+两个函数共享：
 
-**两者唯一区别**：调 SDK 那约 30 行代码不同（Anthropic 用 `tools[].input_schema` + `tool_choice`，OpenAI 兼容用 `tools[].function.parameters` + `tool_choice`）。
+- 同一份系统提示词（`_SYSTEM_PROMPT`）——所有"如何抽取"的知识集中于此。
+- 同一份 JSON Schema：`TestPlan.model_json_schema()`，作为两端
+  structured-output 机制的输入。
+- 同一份 pydantic 反序列化与校验逻辑。
 
-**未来加新厂商** = 新增一个 `extract_with_<provider>`，30 行，签名一致。
+两者唯一差异为 SDK 适配层（约 30 行），分别对应 Anthropic native tool
+use 与 OpenAI 协议 function calling。后者通过 `base_url` 参数可适配
+OpenAI 原生端点、OpenRouter 网关、Alibaba DashScope、本地 vLLM 等任意
+兼容 OpenAI 协议的服务。
 
-### 自动评估器
-
-`evaluate.py` 提供：
-
-```python
-def evaluate_extraction(extracted: TestPlan, gold: TestPlan) -> EvaluationReport:
-    """返回 (equivalent: bool, differences: tuple[str, ...])。"""
-```
-
-底层用 `ir.semantic_equivalent()`，等价规则：
-- 忽略 `meta.id` 和 `meta.nl_spec`（标签，不是内容）
-- 6 个顶层列表当**无序集合**比较（analyses / stimulus / loading / measurements / pass_criteria / corners）
-- `dut.subckt_ports` 当**有序序列**比较（SPICE 调用顺序敏感）
-- 隐式默认值 ≡ 显式默认值（pydantic 自动填）
-
-不等价时，`EvaluationReport.differences` 会列出**字段级**的 diff，例如：
-
-```
-- measurements[1].direction: extracted='rising' gold='falling'
-- pass_criteria[0].value: extracted=70.0 gold=60.0
-```
-
-这让 benchmark 失败时**能立刻看出 LLM 抽错在哪一步**，不止"对/错"的二元判断。
-
-### Running example：5-管差分对 OTA
-
-整个项目的"地基"。一个教科书电路 + 两条简单 spec，**手工**跑通整条 pipeline。产出的 `trace.md` 是 380+ 行的"工程日志"，记录每个阶段的：
-
-- 输入是什么
-- 我手工写了什么
-- 过程中卡在哪里
-- 当前怎么 hack 过去
-- 这暗示 schema 需要什么
-
-**正是这份 trace 决定了 IR schema 长什么样**——没有 trace，schema 只能凭空猜。
-
-| 文件 | 干啥的 |
-|---|---|
-| `trace.md` | 端到端 walkthrough，27 条 punch list |
-| `dut.cir` | 被测电路（5 个 MOSFET + level-1 模型） |
-| `testbench.cir` | 完整 testbench（ngspice 可执行） |
-| `testbench.log` | 实际仿真输出 |
-
-实测结果：**DC gain = 66.11 dB（spec > 60 dB → PASS），UGB = 32.07 MHz（spec ≥ 10 MHz → PASS）**。
+**新增 LLM 厂商的成本**：再写一个 `extract_with_<provider>` 函数，约
+30 行；**不引入** Provider 抽象基类或工厂。该决策的依据是：abstract
+factory 在第二个厂商出现时收益尚未显化，而 LangChain 等胶水库会模糊
+prompt caching、token usage、错误诊断等本研究关注的细节信号。
 
 ---
 
-## 设计原则
+## 5. Stage-1 基准测试
 
-> 这些原则**贯穿全部代码**，不是装饰。
+### 5.1 案例集构造
 
-1. **跨厂商优先（No vendor lock-in）**
-   永远写并列函数 `extract_with_<provider>`，不写厂商抽象层。
+为量化评估 NL → IR 的抽取准确度，本仓库提供 20 个手工设计的基准案例，
+其分布如下：
 
-2. **schema 严格（Strict schema, fail fast）**
-   pydantic `extra="forbid"` + 闭集枚举 + cross-field validator。LLM 抽错时**在最早的边界**拒绝，并给出精确错误信息。
+| 分析类型 | 案例数 | 覆盖原语 |
+|---|---:|---|
+| AC    | 7 | 全部 5 个 AC 原语 |
+| TRAN  | 6 | 全部 5 个 TRAN 原语 + 4 类 TRAN stimulus（PULSE/SINE/STEP/双边沿） |
+| DC    | 5 | 全部 4 个 DC 原语 + DC sweep / .op 两种模式 |
+| NOISE | 2 | 全部 2 个 NOISE 原语 |
+| 合计  | 20 | 全部 16 个原语；多 corner 与单 corner 兼有 |
 
-3. **闭集原语，不用 DSL（Closed primitives, not expression DSL）**
-   v0 只内置 2 个测量原语，比"自由表达式 DSL"更可控。新原语随新 example 出现按需扩展。
+每个案例由三元组 `(NL spec, DutMetadata, gold IR builder)` 构成。所有案
+例共用同一被测电路（5-管差分对 OTA），这一设计有意将变量收敛到"NL → IR
+抽取本身"，避免被测电路拓扑差异引入的混淆因子。
 
-4. **不做过早抽象（No premature abstraction）**
-   `extract_with_anthropic` 和 `extract_with_openai_compatible` 完全并列、有重复，但**没有**`Provider` 接口、**没有**`LLMClient` 工厂、**没有**LangChain。第 N 个 provider 真出现时再考虑抽象。
+完整注册表见 `src/spec2testbench/benchmark/cases.py`，其完整性由
+`tests/test_benchmark_cases.py` 中的离线守护测试验证（参数化 86 项测试，
+含每个 gold IR 的构造、round-trip、原语全覆盖、分布一致性等）。
 
-5. **trace 优先于代码（Trace before code）**
-   每个新 example 都先手工跑通 + 写 trace；新代码必须**有 trace 撞出的需求作为依据**。
+### 5.2 评估方法
 
-6. **测试是 schema 的 acceptance test（Tests are schema-acceptance tests）**
-   不是测代码逻辑——是验证"schema 能不能完整表达这个 example、能不能挡住典型的 LLM 错误"。
+基准 runner 的工作流为：
 
----
+1. 加载注册表中的所有（或子集）案例。
+2. 对每个案例调用一个 extractor（`anthropic` 或 `openai-compatible`）。
+3. 将抽取所得 IR 与 gold IR 调用 `evaluate_extraction(extracted, gold)`
+   比较，得到二元判定与字段级 diff。
+4. 聚合为 JSON + 文本格式的报告。
 
-## 路线图
+输出报告同时包含每案例的状态（pass / fail / error / skipped）、字段
+diff、抽取耗时、抽取所得 IR 的 JSON 形式；可作为后续失败模式聚类的原
+始数据。
 
-跟随原始 7 步路线推进：
+### 5.3 运行方式
 
-| Step | 描述 | 状态 |
-|---|---|---|
-| 1 | 选定 1 个 running example，手工跑通端到端 → 出 trace | ✅ 完成 |
-| 2 | 基于 trace 固化 IR schema 和评估准则（语义等价定义） | ✅ 完成 |
-| 3 | 实装 Stage 1 (LLM extract) + 自动评估 | ✅ 完成 |
-| 4 | 扩 10–20 个种子 case，跑 Stage 1 benchmark | ⏳ 下一步 |
-| 5 | 实装 Stage 2 emit (ngspice) + executability 指标 | ⏳ |
-| 6 | 端到端跑，对比 IR-路径 vs 直接生成路径 | ⏳ |
-| 7 | 根据失败模式聚类，决定下一轮迭代重点 | ⏳ |
-
----
-
-## 测试与质量
-
-| 文件 | 测试数 | 测什么 |
-|---|---|---|
-| `tests/test_ir_diff_pair_ota.py` | 9 | gold IR 能用 schema 表达、JSON round-trip 守恒、每个 gap 的验证规则生效 |
-| `tests/test_ir_equivalence.py` | 14 | semantic equivalence 各种边界（顺序无关、metadata 忽略、顺序敏感性、值差异） |
-| `tests/test_extract_live.py` | 2 | 实际 LLM 抽取 + 与 gold IR 对比；gated 在 API key |
-
-**Lint**：`ruff` 配置在 pyproject.toml；`uv run ruff check src/ tests/` 通过。
-
-跑测试：
-```bash
-uv run pytest -v          # 全跑（live 测试 skip 如果没 key）
-uv run ruff check         # lint
-```
-
----
-
-## 常见问题
-
-**Q: 为什么 v0 只做到 spec → IR？不是要直接出 testbench 吗？**
-A: trace 撞出来 27 条问题分布在 4 个不同 layer（IR schema / emitter / PDKContext / evaluator）。一次性都做意味着每一层都做不深。Step 2 先把 IR 这层做扎实，下一步（Step 5）才有稳定底座做 emitter。
-
-**Q: 为什么用 ngspice 而不是 Spectre？**
-A: ngspice 是 open-source fallback，hermetic 测试方便。v0 用 ngspice 不代表项目长期是 ngspice-only——`MeasurementPrimitive` 抽象就是为了让未来 emitter 同时支持 Spectre / HSPICE / ngspice。
-
-**Q: 我没有 Anthropic key，只有 OpenRouter / 其他第三方平台的 key，能用吗？**
-A: 能。用 `extract_with_openai_compatible` 函数，传你的 `(api_key, base_url, model)` 三元组。`tests/test_extract_live.py` 里的 OPENAI_COMPAT_* 环境变量就是为这个准备的。
-
-**Q: 为什么不用 LangChain？**
-A: LangChain 抽象层太厚，对一个**研究**项目（要精细比较不同 LLM 在 testbench 生成上的表现）反而是负担：prompt caching 信号、错误诊断、token usage 都被屏蔽了。两个 30 行的并列函数比 LangChain 简单 10 倍且更可控。
-
-**Q: 我能加新的测量原语吗？**
-A: 能但请慎重——闭集原语是 schema 的核心约束。流程：
-1. 写一个新 running example 把新原语撞出来
-2. 在 `MeasurementPrimitive` enum 加新值
-3. 在 `Measurement._primitive_params` validator 加参数验证
-4. 在 `_SYSTEM_PROMPT` 加新原语描述 + 用法
-5. 加对应的 test 验证 schema 正确性
-
----
-
-<div align="center">
-
-[⬆ 回到顶部](#spec2testbench)  &nbsp;·&nbsp;  [English version ↓](#english-version)
-
-</div>
-
----
-
-# English Version
-
-<div align="center">
-
-**Turn natural-language analog test specs into executable testbenches, automatically, via LLMs.**
-
-[🇨🇳 中文版 ↑](#spec2testbench) &nbsp;·&nbsp; 🇬🇧 **English (this section)**
-
-</div>
-
----
-
-## Contents
-
-- [One-line pitch](#one-line-pitch)
-- [Why this project exists](#why-this-project-exists)
-- [The full vision (pipeline)](#the-full-vision-pipeline)
-- [What v0 actually delivers](#what-v0-actually-delivers)
-- [Quick start](#quick-start)
-- [Repository layout](#repository-layout)
-- [Component deep dives](#component-deep-dives)
-  - [The IR — heart of the project](#the-ir--heart-of-the-project)
-  - [Closed measurement primitives](#closed-measurement-primitives)
-  - [Cross-provider LLM extractor](#cross-provider-llm-extractor)
-  - [Automated evaluator](#automated-evaluator)
-  - [Running example: 5-T differential-pair OTA](#running-example-5-t-differential-pair-ota)
-- [Design principles](#design-principles)
-- [Roadmap](#roadmap)
-- [Testing & quality](#testing--quality)
-- [FAQ](#faq)
-
----
-
-## One-line pitch
-
-**`spec2testbench` is a research codebase asking: can an LLM reliably turn an
-informal sentence like "DC gain > 60 dB, UGB ≥ 10 MHz with 1 pF load" into
-a ngspice/Spectre/HSPICE testbench file that actually runs?**
-
-If yes, the autoresearch loop for analog IC design closes — agents finally
-have a self-iterating feedback loop. If no, this repo at least gives you
-a **quantitative diagnostic framework** showing exactly *where* the LLM
-breaks: misunderstanding the spec, picking the wrong primitive, mis-wiring
-ports, or tripping over a dialect quirk.
-
----
-
-## Why this project exists
-
-The autoresearch vision in analog design:
-
-```
-            ┌────────────┐
-            │  LLM agent │  "Let me try this sizing."
-            └─────┬──────┘
-                  │
-                  ▼ (this is where you need a testbench)
-            ┌─────────────┐
-            │ sim feedback│  "DC gain = 43 dB, UGB = 12 MHz."
-            └─────┬───────┘
-                  │
-                  ▼
-            ┌─────────────┐
-            │ agent learns│  "Gain too low — increase W/L, try again."
-            └─────┬───────┘
-                  │
-                  └─────► back to the top
-```
-
-**Inside this loop the testbench is the judge.** The agent changes the DUT,
-the testbench measures, the agent learns from the numbers.
-
-The bottleneck: **writing a correct testbench takes an expert several hours
-per spec** — getting differential stimulus right, picking corners, avoiding
-simulator-dialect traps, and so on. Agents iterate hundreds of times per
-night; a human writes ~5 testbenches per week. **The human is the bottleneck
-of autoresearch.**
-
-`spec2testbench` is about automating that one step — natural-language spec
-→ correct testbench — so the agent loop can actually close.
-
-Why LLMs? Because this step is fundamentally **structured translation with
-embedded expert knowledge** — and LLMs are currently the only tool that
-operates reliably at this semantic level.
-
----
-
-## The full vision (pipeline)
-
-```
-┌──────────────┐
-│   NL spec    │   "DC gain should exceed 60 dB, UGB ≥ 10 MHz with 1pF load..."
-└──────┬───────┘
-       │  Stage 1: spec extraction         ← what v0 implements
-       ▼
-┌──────────────┐
-│  TestPlan IR │   strict JSON, pydantic-validated
-└──────┬───────┘
-       │
-       │  + DUT netlist (upstream input)
-       │  + PDK context (from the PDK)
-       │
-       │  Stage 2: testbench emission       ← not yet implemented (Step 5)
-       ▼
-┌──────────────────┐
-│ Executable spice │   .cir / .spice file
-│   testbench      │   Spectre first, HSPICE next, ngspice fallback
-└──────┬───────────┘
-       │  Stage 3: simulate
-       ▼
-┌──────────────────┐
-│  pass / fail     │   fine-grained eval: was extract right? emit? sim? verdict?
-└──────────────────┘
-```
-
----
-
-## What v0 actually delivers
-
-**v0 scope: spec → IR only** (top half of the pipeline). The bottom half
-(IR → executable netlist → simulator → verdict) is deferred to later steps.
-
-Concretely:
-
-### ① A hand-run end-to-end example (Step 1)
-
-We took one realistic case — a 5-transistor differential-pair OTA with two
-specs (DC gain & UGB) — and **walked the entire pipeline by hand**: write
-the NL, write the IR, write the DUT, write the testbench, run ngspice,
-extract measurements, judge pass/fail. Every time something turned out to
-be silently missing, we wrote it down.
-
-The walkthrough produced a **27-item punch list**:
-- 11 **schema gaps** (what the IR needs to express)
-- 14 **emitter knowledge debts** (info IR → netlist translation needs from elsewhere)
-- 2 **evaluator knowledge debts** (unit conversion, operator semantics)
-
-See `examples/01_diff_pair_ota/trace.md` (380+ lines).
-
-### ② A strict IR schema (Step 2)
-
-A pydantic v2 schema that locks down the structured TestPlan shape.
-**10 of the 11 schema gaps are resolved in-IR**; the last one
-(VDD / bias / Vin_cm) is explicitly deferred to a future `PDKContext` data
-structure.
-
-Code: `src/spec2testbench/ir.py` (~440 lines)
-- 11 pydantic models
-- 8 enums (closed-value constraints)
-- 5 cross-field validators (enforce inter-table reference integrity)
-- `semantic_equivalent(a, b)` for benchmark-time IR comparison
-
-### ③ Cross-provider LLM extractor + auto-evaluator (Step 3)
-
-**Two parallel extractors** sharing the same system prompt, the same schema,
-the same validation. Only the SDK wrapper differs:
-
-| Function | Endpoint |
-|---|---|
-| `extract_with_anthropic` | Anthropic direct (api.anthropic.com), with prompt caching |
-| `extract_with_openai_compatible` | Any OpenAI-protocol endpoint: OpenAI direct / OpenRouter / Alibaba DashScope / other compatible platforms / local vLLM / etc. |
-
-Code: `src/spec2testbench/extract.py` + `src/spec2testbench/evaluate.py`.
-
----
-
-## Quick start
-
-### Requirements
-
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (Python project / venv manager)
-- [ngspice](https://ngspice.sourceforge.io/) 45+ (only to rerun the running-example simulation)
-- At least one LLM API key (Anthropic / OpenRouter / any OpenAI-compatible) — only to run live extraction tests
-
-### Install
+**离线 dry-run**（仅验证 gold IR 完整性，不调用 LLM）：
 
 ```bash
-git clone <your-fork-url>.git
+uv run python -m spec2testbench.benchmark.runner --dry-run
+```
+
+**Anthropic 直连**：
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+uv run python -m spec2testbench.benchmark.runner \
+    --provider anthropic --model claude-sonnet-4-6
+```
+
+**OpenAI 兼容端点**（OpenRouter / DashScope / 本地 vLLM 等）：
+
+```bash
+export OPENAI_COMPAT_API_KEY=...
+export OPENAI_COMPAT_BASE_URL=https://openrouter.ai/api/v1
+uv run python -m spec2testbench.benchmark.runner \
+    --provider openai-compatible \
+    --model anthropic/claude-sonnet-4-6
+```
+
+**子集运行**：
+
+```bash
+uv run python -m spec2testbench.benchmark.runner --provider anthropic \
+    --case-id a1_diff_pair_gain_ugb --case-id t1_slew_rate_rising
+```
+
+报告生成于 `src/spec2testbench/benchmark/results/` 目录。每次运行产出
+`<timestamp>_<provider>.json` 与同名 `.txt`，其中 JSON 文件保留完整结
+构以便后续二次分析。
+
+> **状态备注**：当前 Stage-1 基准测试已**代码完整（code-complete）**，
+> 但截至 README 更新时尚未在公开 LLM 端点上执行——`results/` 目录暂不
+> 提供参考报告。读者可按上述命令自行运行以获得当前 LLM 的实测 pass
+> rate 与失败聚类。
+
+---
+
+## 6. 实现细节
+
+### 6.1 仓库结构
+
+```
+spec2testbench/
+├── README.md                            # 本文档
+├── pyproject.toml                       # uv 项目；依赖：pydantic / anthropic / openai / pytest / ruff
+├── uv.lock                              # 可复现锁文件
+│
+├── examples/
+│   └── 01_diff_pair_ota/                # Step 1 的参考示例
+│       ├── trace.md                     # 端到端手工 walkthrough（含 27 项 punch list）
+│       ├── dut.cir                      # 被测电路（5 个 MOSFET，level-1 模型）
+│       ├── testbench.cir                # 手工编写的完整 ngspice testbench
+│       └── testbench.log                # 实际仿真输出
+│
+├── src/spec2testbench/
+│   ├── ir.py                            # TestPlan IR schema + 语义等价
+│   ├── extract.py                       # 两个并列 LLM extractor
+│   ├── evaluate.py                      # 抽取 IR 与 gold IR 的自动评估
+│   └── benchmark/
+│       ├── cases.py                     # 20 个基准案例注册表
+│       ├── runner.py                    # CLI runner
+│       ├── README.md                    # 基准测试使用说明
+│       └── results/                     # 运行报告产出目录（gitignored）
+│
+└── tests/
+    ├── conftest.py                      # 共享 fixture（gold IR、NL、DUT metadata）
+    ├── test_ir_diff_pair_ota.py         # 9 项：示例 IR round-trip + 每个 gap 的验证
+    ├── test_ir_equivalence.py           # 14 项：语义等价的边界行为
+    ├── test_ir_extended_primitives.py   # 49 项：所有新原语的正负路径 + cross-ref
+    ├── test_benchmark_cases.py          # 86 项：注册表守护
+    └── test_extract_live.py             # 2 项：live LLM 抽取（API key 门控）
+```
+
+### 6.2 快速开始
+
+环境要求：
+
+- Python ≥ 3.13
+- [uv](https://docs.astral.sh/uv/) — Python 项目与虚拟环境管理工具
+- [ngspice](https://ngspice.sourceforge.io/) ≥ 45（仅在重跑参考示例仿真
+  时需要）
+- 至少一个 LLM API key（仅在 live extraction 或 benchmark 运行时需要）
+
+安装：
+
+```bash
+git clone <fork-url>.git
 cd spec2testbench
 uv sync
 ```
 
-### Run the offline tests (no API key needed)
+执行全部离线测试：
 
 ```bash
-uv run pytest -v
-# expect: 23 passed, 2 skipped
+uv run pytest
+# 预期：157 passed, 2 skipped
 ```
 
-The 23 passes mean: the IR schema can express the running example, JSON
-round-trips lossless, every gap validation fires correctly, and semantic
-equivalence holds across all boundary cases.
+重跑参考示例的 ngspice 仿真：
 
-### Run live extraction (API key required)
+```bash
+cd examples/01_diff_pair_ota
+ngspice -b testbench.cir -o testbench.log
+grep -E 'dc_gain_lin|ugb' testbench.log
+# 预期：dc_gain_lin = 2.019711e+03   (= 66.11 dB)
+#       ugb         = 3.206502e+07   (= 32.07 MHz)
+```
 
-**Anthropic direct:**
+### 6.3 测试与质量保证
+
+| 测试文件 | 测试数 | 覆盖范围 |
+|---|---:|---|
+| `tests/test_ir_diff_pair_ota.py` | 9 | 示例 IR round-trip；每个 schema gap 的验证规则 |
+| `tests/test_ir_equivalence.py` | 14 | 语义等价的边界（顺序无关、metadata 忽略、序列敏感性） |
+| `tests/test_ir_extended_primitives.py` | 49 | 14 个新原语的正负路径；新 analysis 模型；新 stimulus 类型；cross-ref |
+| `tests/test_benchmark_cases.py` | 86 | 20 个案例的 gold IR 构造；原语全覆盖；分布一致性 |
+| `tests/test_extract_live.py` | 2 | 实际 LLM 抽取 vs gold IR（gated） |
+| **合计** | **160（含 2 个 live skipped）** | |
+
+Lint：`uv run ruff check src/ tests/` 通过。
+
+---
+
+## 7. 路线图
+
+| Step | 描述 | 状态 |
+|---|---|---|
+| 1 | 选定参考示例，手工跑通端到端，生成 trace | 完成（2026-05-13） |
+| 2 | 锁定 IR schema 与语义等价定义 | 完成（2026-05-13） |
+| 3 | 实装 Stage 1 抽取 + 自动评估 | 完成（2026-05-14） |
+| 4 | 扩展 IR 至 4 类分析、16 原语；构造 20 案例 benchmark；实装 runner | 代码完整（2026-05-15）；benchmark 实际运行待执行 |
+| 5 | 实装 Stage 2 emitter（IR → ngspice netlist）+ executability 指标 | 待开始 |
+| 6 | 端到端运行；与"直接生成 testbench"基线对比 | 待开始 |
+| 7 | 失败模式聚类；确定下一轮迭代重点 | 待开始 |
+
+---
+
+## 8. 设计原则
+
+以下原则贯穿全部代码，作为工程决策的依据：
+
+1. **跨厂商优先（No vendor lock-in）**：以并列的 `extract_with_<provider>`
+   函数实现多厂商支持，不引入 Provider 抽象层与胶水库。
+2. **严格 schema，尽早失败（Strict schema, fail fast）**：`extra="forbid"`、
+   闭集 enum、cross-field validator 共同保证 LLM 输出错位时在最早的边界
+   被拒绝。
+3. **闭集原语优于表达式 DSL（Closed primitives over expression DSL）**：v0
+   只内置 16 个测量原语，扩展须由新示例驱动。
+4. **避免过早抽象（No premature abstraction）**：在第 N 个具体实例出现
+   之前不引入抽象层。
+5. **trace 先于代码（Trace before code）**：每个新示例先以手工方式跑通
+   pipeline 并产出 trace，新代码必须有 trace 暴露的需求作为依据。
+6. **测试即 schema 验收（Tests are schema-acceptance tests）**：测试关注
+   "schema 能否完整表达示例"以及"能否拒绝典型 LLM 错误"，而非测试代码
+   逻辑本身。
+
+---
+
+## 9. 常见问题
+
+**Q：为何 v0 仅做到 spec → IR，不直接产出 testbench？**
+A：参考示例的 trace 暴露了 27 项设计/工程缺陷，分布在 4 个层次（IR
+schema / emitter / PDKContext / 评估器）。同时推进各层会导致每层均不
+深入。Step 2 先锁定 IR 层，使 Step 5 的 emitter 在稳定基底上构建。
+
+**Q：为何默认 ngspice 而非 Spectre？**
+A：ngspice 为开源工具，便于在 hermetic 环境下复现。`MeasurementPrimitive`
+等抽象使得未来 emitter 可同时面向 Spectre、HSPICE 与 ngspice。
+
+**Q：仅持有 OpenRouter 或其他第三方 OpenAI 兼容平台的 key，能否使用？**
+A：可。使用 `extract_with_openai_compatible`，传入 `(api_key,
+base_url, model)` 三元组即可；`tests/test_extract_live.py` 中的
+`OPENAI_COMPAT_*` 环境变量即为此设计。
+
+**Q：是否使用 LangChain？**
+A：未使用。LangChain 的抽象层会模糊 prompt caching 信号、错误诊断、
+token 用量等本研究关心的细节。两个 30 行并列函数在可控性上明显优于厚
+重抽象层。
+
+**Q：如何新增测量原语？**
+A：步骤如下：
+1. 通过新示例 + trace 暴露该原语的实际需求；
+2. 在 `MeasurementPrimitive` enum 中添加新值；
+3. 在 `_PRIMITIVE_PARAM_SPEC` 与 `Measurement._primitive_params`
+   validator 中声明必填 / 禁用字段；
+4. 在 `_SYSTEM_PROMPT` 中补充该原语的语义、必填字段、NL 触发表达；
+5. 在 `tests/test_ir_extended_primitives.py` 中补充正负路径测试。
+
+---
+
+[返回顶部 / Back to top](#spec2testbench)
+
+---
+
+# English Section
+
+## 1. Motivation
+
+Automation research in analog integrated circuit design (hereafter
+*autoresearch*) relies on a feedback loop in which a design agent — most
+plausibly an LLM-based one — proposes a circuit, a simulator evaluates its
+performance, and the agent iterates on the result. Within this loop, the
+**testbench acts as the adjudicator**: it translates abstract performance
+metrics (DC gain, UGB, phase margin, and so on) into the stimulus,
+analysis, and verdict logic that a SPICE-class simulator can execute.
+
+Authoring a correct testbench requires precise engineering decisions
+across many concerns: symmetric differential excitation, corner coverage,
+simulator-dialect pitfalls, and unit consistency. This task is typically
+measured in person-hours. Because agent iteration runs in minutes or
+seconds, **manual testbench authorship is the critical bottleneck for
+autoresearch in this domain**.
+
+`spec2testbench` investigates whether LLMs can automate the translation
+"natural-language specification → executable testbench". The work
+pursues two complementary objectives:
+
+1. **Capability assessment** — to answer quantitatively whether current
+   LLMs are sufficient for this translation.
+2. **Diagnostic instrumentation** — when they are not, to produce
+   **field-level localisation** of the failure so that subsequent model
+   or prompt iteration is targeted rather than speculative.
+
+The translation problem is fundamentally one of *structured semantic
+mapping under expert constraints*, an area in which LLMs are presently
+the most reliable available tool.
+
+---
+
+## 2. System Overview
+
+The complete pipeline comprises three stages:
+
+```
+┌──────────────────────┐
+│  Natural-language    │  e.g. "DC gain ≥ 60 dB, UGB ≥ 10 MHz, 1 pF load"
+│       spec           │
+└──────────┬───────────┘
+           │  Stage 1: spec extraction         ← implemented in v0
+           ▼
+┌──────────────────────┐
+│   TestPlan IR        │  strictly-typed JSON, pydantic-validated
+└──────────┬───────────┘
+           │  + DUT netlist (upstream input)
+           │  + PDK context (from the foundry)
+           │  Stage 2: testbench emission       ← deferred to Step 5
+           ▼
+┌──────────────────────┐
+│  Executable netlist  │  .cir / .spice
+└──────────┬───────────┘
+           │  Stage 3: simulate
+           ▼
+┌──────────────────────┐
+│      pass / fail     │  per-stage evaluation: extract / emit / sim / verdict
+└──────────────────────┘
+```
+
+**Implemented in v0**: Stage 1 (NL → IR) and its automated evaluation
+infrastructure. **Deferred**: Stages 2 and 3. The emitter interface is
+reserved at the IR boundary and currently raises `NotImplementedError`;
+its implementation is scheduled for Step 5.
+
+The intermediate representation lies at the centre of the design: it
+expresses *what to test, how to test it, and how to judge the outcome*
+in a strictly-typed form that serves as the common contract for LLM
+output validation, emitter generation, and benchmark evaluation.
+
+---
+
+## 3. The TestPlan Intermediate Representation
+
+### 3.1 Top-level structure
+
+`TestPlan` consists of seven top-level sections:
+
+```python
+class TestPlan(BaseModel):
+    meta:          Meta              # metadata and original NL spec text
+    dut:           Dut               # DUT identity and port signature
+    analyses:      list[Analysis]    # simulation definitions (discriminated union)
+    stimulus:      list[Stimulus]    # signal sources
+    loading:       list[Loading]     # passive loads
+    measurements:  list[Measurement] # scalars derived from analyses
+    pass_criteria: list[PassCriterion]  # verdict rules
+    corners:       list[Corner]      # process / temperature / supply corners
+```
+
+The sectioned structure rather than a flat JSON record was chosen
+because two measurements often share a single analysis (for example,
+DC gain and UGB both arise from one AC sweep); a flat record cannot
+eliminate the resulting redundancy and is prone to inconsistency. The
+detailed analysis is documented as Gap-B in
+`examples/01_diff_pair_ota/trace.md`.
+
+### 3.2 Analysis-type coverage
+
+The IR currently covers four analysis types, all natively supported by
+ngspice:
+
+| Analysis type | IR model | ngspice form |
+|---|---|---|
+| AC (small-signal sweep) | `AcAnalysis` | `.ac <style> <pts> <f_start> <f_stop>` |
+| TRAN (transient) | `TranAnalysis` | `.tran <t_step> <t_stop> <t_start> [uic]` |
+| DC (operating point or single-source sweep) | `DcAnalysis` | `.op` or `.dc <Vsrc> <start> <stop> <step>` |
+| NOISE (noise sweep) | `NoiseAnalysis` | `.noise v(<out>) <input_src> ...` |
+
+The remaining 23 analyses commonly found in commercial RF-capable
+simulators (`stb`, `pss`, `pac`, `pnoise`, `hb`, `qpss`, `envlp`,
+`dcmatch`, `acmatch`, `sp`, `xf`, `sens`, `pz`, and so on) are
+**deliberately excluded from the v0 enum**. ngspice does not execute
+them, and admitting them would create the appearance of capability the
+default emitter cannot deliver. They will be added when a future
+simulator (Spectre / Xyce / commercial RF simulator) is integrated.
+
+### 3.3 Closed measurement primitives
+
+Concepts such as "DC gain", "UGB", and "phase margin" are not data
+fields but **algorithms for extracting scalars from a simulation
+curve**. To eliminate the contract drift introduced by free-form
+strings, the IR adopts a closed **measurement-primitive vocabulary** of
+16 entries:
+
+| Family | Primitive | Semantics | Required parameters |
+|---|---|---|---|
+| AC | `ac_low_freq_asymptote` | \|H(f)\| at f = f_start | — |
+| AC | `ac_freq_at_magnitude_crossing` | frequency at which \|H\| crosses threshold | `target_magnitude`, `direction` |
+| AC | `ac_phase_at_freq` | ∠H(f) at a specified frequency | `at_freq` or `at_when_measurement` (one of) |
+| AC | `ac_magnitude_at_freq` | \|H(f)\| at a specified frequency | `at_freq` |
+| AC | `ac_phase_margin` | 180° + ∠H at UGB | `at_when_measurement` |
+| TRAN | `tran_slew_rate` | 10%–90% slope of a transition | `edge` |
+| TRAN | `tran_settling_time` | time to remain within ±tolerance | `tolerance_pct`, `trigger_event` |
+| TRAN | `tran_overshoot_pct` | overshoot as percentage | — |
+| TRAN | `tran_peak_to_peak` | max − min over window | — |
+| TRAN | `tran_thd` | total harmonic distortion (single-tone) | `fundamental_freq` |
+| DC | `dc_offset_input_referred` | input-referred offset voltage | `target_output_role`, `target_output_value` |
+| DC | `dc_output_swing_range` | extreme of output over DC sweep | `extreme` ∈ {min, max, range} |
+| DC | `dc_supply_current` | quiescent supply current | `supply_role` |
+| DC | `dc_gm` | small-signal transconductance | `input_role`, `output_role`, `at_bias_value` |
+| NOISE | `noise_input_referred_at_freq` | input-referred noise PSD | `at_freq` |
+| NOISE | `noise_integrated_rms` | RMS noise integrated over a band | `f_low`, `f_high`, `referred_to` |
+
+Each primitive's required-parameter signature is enforced by a
+field-level validator on `Measurement`; disallowed parameters are
+rejected. A separate `_cross_refs` validator enforces consistency
+between a primitive and the type of its referenced `Analysis` (for
+example, `tran_slew_rate` cannot reference an AC analysis). Together,
+these constraints cause pydantic to reject malformed LLM output at the
+earliest boundary with field-localised error messages.
+
+### 3.4 Semantic equivalence
+
+To enable automated benchmark evaluation, the IR defines a semantic-
+equivalence relation `semantic_equivalent`:
+
+- `meta.id` and `meta.nl_spec` are ignored, since they are labels
+  rather than content.
+- The six top-level lists (`analyses`, `stimulus`, `loading`,
+  `measurements`, `pass_criteria`, `corners`) are compared as
+  **set-like** collections; element order is ignored.
+- `dut.subckt_ports` is compared as a **sequence**, since its order is
+  semantically significant for SPICE sub-circuit instantiation.
+- Implicit and explicit defaults are treated identically (pydantic
+  expands them uniformly during serialisation).
+
+When two IRs are not equivalent, the evaluator returns a field-level
+diff list, for example:
+
+```
+measurements[1].direction: extracted='rising' gold='falling'
+pass_criteria[0].value:    extracted=70.0       gold=60.0
+```
+
+---
+
+## 4. Cross-Provider LLM Extraction
+
+To avoid coupling to any single LLM vendor or mediator framework, the
+extractor module adopts a parallel-function pattern:
+
+```python
+def extract_with_anthropic(
+    nl_spec: str, dut: DutMetadata, *,
+    plan_id: str, api_key: str | None = None,
+    model: str = "claude-sonnet-4-6",
+) -> TestPlan: ...
+
+def extract_with_openai_compatible(
+    nl_spec: str, dut: DutMetadata, *,
+    plan_id: str, api_key: str, base_url: str, model: str,
+) -> TestPlan: ...
+```
+
+Both functions share:
+
+- The same system prompt (`_SYSTEM_PROMPT`), the sole location of
+  extraction-related knowledge.
+- The same JSON Schema, obtained from `TestPlan.model_json_schema()`
+  and supplied to each provider's structured-output mechanism.
+- The same pydantic deserialisation and validation logic.
+
+They differ only in their SDK adapters (approximately 30 lines each):
+Anthropic's native tool-use API and the OpenAI function-calling API
+respectively. Through the `base_url` parameter, the latter is
+compatible with OpenAI's native endpoint, the OpenRouter gateway,
+Alibaba DashScope, local vLLM deployments, and any service exposing
+the OpenAI protocol.
+
+The cost of adding a new provider is one additional 30-line
+`extract_with_<provider>` function. The design deliberately omits a
+`Provider` base class or factory dispatch: such abstractions yield
+their value only after multiple concrete implementations have
+crystallised. Comparable mediator libraries (LangChain, LiteLLM)
+obscure prompt-cache signalling, token-usage telemetry, and error
+diagnostics — all of which are central to this research's questions.
+
+---
+
+## 5. Stage-1 Benchmark
+
+### 5.1 Case construction
+
+To quantify NL → IR extraction accuracy, the repository provides 20
+hand-curated benchmark cases with the following distribution:
+
+| Analysis type | Cases | Primitives covered |
+|---|---:|---|
+| AC    | 7 | all 5 AC primitives |
+| TRAN  | 6 | all 5 TRAN primitives + 4 stimulus shapes (PULSE / SINE / STEP / dual-edge) |
+| DC    | 5 | all 4 DC primitives + sweep and operating-point modes |
+| NOISE | 2 | both NOISE primitives |
+| Total | 20 | all 16 primitives; single- and multi-corner coverage |
+
+Each case consists of a triple `(NL spec, DutMetadata, gold IR
+builder)`. All cases share the same device under test (the
+5-transistor differential-pair OTA), a design choice that isolates the
+NL → IR extraction step from confounding effects of varying circuit
+topology.
+
+The complete registry resides in
+`src/spec2testbench/benchmark/cases.py` and is guarded by offline
+parameterised tests in `tests/test_benchmark_cases.py` (86 assertions
+covering gold-IR construction, round-tripping, primitive coverage, and
+distributional consistency).
+
+### 5.2 Evaluation methodology
+
+The benchmark runner operates as follows:
+
+1. Load the registry (or a user-specified subset).
+2. For each case, invoke an extractor (`anthropic` or
+   `openai-compatible`).
+3. Compare the extracted IR with the gold IR via
+   `evaluate_extraction(extracted, gold)`, yielding a Boolean verdict
+   and a field-level diff list.
+4. Aggregate the results into a JSON and a plain-text report.
+
+The JSON report retains per-case status (pass / fail / error /
+skipped), diffs, extraction latency, and the full JSON of the
+extracted IR, supporting downstream failure-mode clustering.
+
+### 5.3 Invocation
+
+Offline dry-run (validates every gold IR; no LLM call):
+
+```bash
+uv run python -m spec2testbench.benchmark.runner --dry-run
+```
+
+Anthropic native endpoint:
+
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-uv run pytest tests/test_extract_live.py::test_extract_with_anthropic -v -s
+uv run python -m spec2testbench.benchmark.runner \
+    --provider anthropic --model claude-sonnet-4-6
 ```
 
-**OpenRouter (any model, e.g. Claude via the gateway):**
-```bash
-export OPENAI_COMPAT_API_KEY=sk-or-...
-export OPENAI_COMPAT_BASE_URL=https://openrouter.ai/api/v1
-export OPENAI_COMPAT_MODEL=anthropic/claude-sonnet-4.6
-uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
-```
+OpenAI-protocol endpoint (OpenRouter / DashScope / local vLLM / etc.):
 
-**Any other OpenAI-compatible platform:**
 ```bash
 export OPENAI_COMPAT_API_KEY=...
-export OPENAI_COMPAT_BASE_URL=https://<their-endpoint>/v1
-export OPENAI_COMPAT_MODEL=<their-model-id>
-uv run pytest tests/test_extract_live.py::test_extract_with_openai_compatible -v -s
+export OPENAI_COMPAT_BASE_URL=https://openrouter.ai/api/v1
+uv run python -m spec2testbench.benchmark.runner \
+    --provider openai-compatible \
+    --model anthropic/claude-sonnet-4-6
 ```
 
-### Rerun the running-example ngspice simulation
+Subset:
+
+```bash
+uv run python -m spec2testbench.benchmark.runner --provider anthropic \
+    --case-id a1_diff_pair_gain_ugb --case-id t1_slew_rate_rising
+```
+
+Reports are written to `src/spec2testbench/benchmark/results/` as
+`<timestamp>_<provider>.json` and the corresponding `.txt`. The JSON
+form retains complete structural detail for later analysis.
+
+> **Status note.** The Stage-1 benchmark is **code-complete** as of
+> this README's revision, but has not yet been executed against a
+> public LLM endpoint. The `results/` directory therefore contains no
+> reference report. Readers may execute the commands above to obtain
+> measured pass rates and failure clusters for a given model.
+
+---
+
+## 6. Implementation
+
+### 6.1 Repository layout
+
+```
+spec2testbench/
+├── README.md                            # this document
+├── pyproject.toml                       # uv project; pydantic / anthropic / openai / pytest / ruff
+├── uv.lock                              # reproducibility lockfile
+│
+├── examples/
+│   └── 01_diff_pair_ota/                # Step 1 reference example
+│       ├── trace.md                     # hand-executed walkthrough; 27-item punch list
+│       ├── dut.cir                      # DUT netlist (5 MOSFETs, level-1 models)
+│       ├── testbench.cir                # hand-written executable ngspice testbench
+│       └── testbench.log                # actual simulation output
+│
+├── src/spec2testbench/
+│   ├── ir.py                            # TestPlan IR schema and semantic equivalence
+│   ├── extract.py                       # two parallel LLM extractors
+│   ├── evaluate.py                      # extracted-IR vs gold-IR evaluator
+│   └── benchmark/
+│       ├── cases.py                     # 20-case registry
+│       ├── runner.py                    # CLI runner
+│       ├── README.md                    # benchmark usage notes
+│       └── results/                     # report output directory (gitignored)
+│
+└── tests/
+    ├── conftest.py                      # shared fixtures
+    ├── test_ir_diff_pair_ota.py         # 9 tests: example round-trip + per-gap validation
+    ├── test_ir_equivalence.py           # 14 tests: equivalence boundaries
+    ├── test_ir_extended_primitives.py   # 49 tests: new primitives, analyses, stimuli, cross-refs
+    ├── test_benchmark_cases.py          # 86 tests: registry guard
+    └── test_extract_live.py             # 2 tests: live LLM extraction (API key-gated)
+```
+
+### 6.2 Quick start
+
+Prerequisites:
+
+- Python ≥ 3.13
+- [uv](https://docs.astral.sh/uv/), the Python project and virtual-
+  environment manager
+- [ngspice](https://ngspice.sourceforge.io/) ≥ 45 (only required when
+  reproducing the reference simulation)
+- At least one LLM API key (only required for live extraction or
+  benchmark execution)
+
+Install:
+
+```bash
+git clone <fork-url>.git
+cd spec2testbench
+uv sync
+```
+
+Run the offline test suite:
+
+```bash
+uv run pytest
+# expected: 157 passed, 2 skipped
+```
+
+Reproduce the reference example's ngspice simulation:
 
 ```bash
 cd examples/01_diff_pair_ota
@@ -672,283 +854,102 @@ grep -E 'dc_gain_lin|ugb' testbench.log
 #           ugb         = 3.206502e+07   (= 32.07 MHz)
 ```
 
----
+### 6.3 Testing and quality
 
-## Repository layout
+| Test file | Tests | Coverage |
+|---|---:|---|
+| `tests/test_ir_diff_pair_ota.py` | 9 | reference IR round-trip; per-gap validation |
+| `tests/test_ir_equivalence.py` | 14 | semantic-equivalence boundary cases |
+| `tests/test_ir_extended_primitives.py` | 49 | 14 new primitives (positive and negative paths); new analyses; new stimuli; cross-refs |
+| `tests/test_benchmark_cases.py` | 86 | gold-IR construction; primitive coverage; distributional consistency |
+| `tests/test_extract_live.py` | 2 | live LLM extraction (gated) |
+| **Total** | **160 (incl. 2 skipped by default)** | |
 
-```
-spec2testbench/
-├── README.md                          ← you are here
-│
-├── pyproject.toml                     ← uv project; deps: pydantic / anthropic / openai / pytest / ruff
-├── uv.lock                            ← committed for reproducibility
-├── .python-version                    ← pinned to 3.13
-│
-├── examples/
-│   └── 01_diff_pair_ota/              ← Running example: 5-T diff-pair OTA
-│       ├── trace.md                   ← end-to-end walkthrough + 27 punch-list items
-│       ├── dut.cir                    ← DUT netlist (5 MOSFETs, level-1 models)
-│       ├── testbench.cir              ← hand-written full testbench (runs in ngspice)
-│       └── testbench.log              ← actual sim output (DC gain ≈ 66 dB, UGB ≈ 32 MHz)
-│
-├── src/spec2testbench/
-│   ├── __init__.py
-│   ├── ir.py                          ← TestPlan IR schema + semantic equivalence
-│   ├── extract.py                     ← two parallel LLM extractors
-│   └── evaluate.py                    ← extracted-IR vs gold-IR auto evaluator
-│
-└── tests/
-    ├── conftest.py                    ← shared fixtures (gold IR, NL, DUT metadata)
-    ├── test_ir_diff_pair_ota.py       ← 9 tests: gold IR round-trip + per-gap validation
-    ├── test_ir_equivalence.py         ← 14 tests: equivalence boundaries
-    └── test_extract_live.py           ← 2 tests: live LLM extraction (gated on API keys)
-```
+Linting passes under `uv run ruff check src/ tests/`.
 
 ---
 
-## Component deep dives
-
-### The IR — heart of the project
-
-`TestPlan` is the strictly-typed form of the structured intermediate data.
-Seven top-level sections cover *what to test, how to test it, and how to
-judge*:
-
-```python
-class TestPlan(BaseModel):
-    meta:          Meta              # metadata + original NL spec text
-    dut:           Dut               # DUT identity + port signature
-    analyses:      list[AcAnalysis]  # simulations to run
-    stimulus:      list[Stimulus]    # signal sources
-    loading:       list[Loading]     # passive loads
-    measurements:  list[Measurement] # scalars derived from analyses
-    pass_criteria: list[PassCriterion]  # verdict rules
-    corners:       list[Corner]      # PVT corners
-```
-
-**Why 7 sections instead of a flat JSON?** As soon as two measurements
-share one analysis (e.g. DC gain and UGB both from one AC sweep), the
-flat form breaks. See Gap-B in `examples/01_diff_pair_ota/trace.md` §2.
-
-**Strict by design:**
-- `extra="forbid"` — extra fields are rejected outright
-- 5 cross-field validators — e.g. `measurement.from_analysis` must
-  reference an existing analysis id
-- Closed enums — stimulus kind, measurement primitive, comparison op are
-  all enum-constrained
-
-The purpose is to **fail fast at the boundary with precise, machine-
-reusable error messages** the agent loop can act on.
-
-### Closed measurement primitives
-
-The single most important design decision. "DC gain" and "UGB" are not
-fields — they are *recipes for extracting numbers from a simulation
-curve*. Using free-form strings would silently break the emitter /
-evaluator contract. So we introduce a **closed primitive vocabulary**:
-
-```python
-class MeasurementPrimitive(str, Enum):
-    AC_LOW_FREQ_ASYMPTOTE         = "ac_low_freq_asymptote"         # → DC gain
-    AC_FREQ_AT_MAGNITUDE_CROSSING = "ac_freq_at_magnitude_crossing" # → UGB / -3dB
-```
-
-Each primitive:
-- Has closed semantics (precisely defines *how* to extract from the curve)
-- Has an explicit `output_unit` (required IR field)
-- Has required parameters validated by pydantic (crossing primitives must
-  carry `direction` — closing the silent-bug class on direction loss)
-
-v0 ships exactly **2** primitives — enough for the current running example.
-New primitives get added deliberately, when a new running example surfaces
-them (YAGNI).
-
-### Cross-provider LLM extractor
-
-Per the cross-provider-portability principle: **no provider abstraction
-layer, no LangChain/LiteLLM glue.** Two parallel functions with identical
-signatures:
-
-```python
-def extract_with_anthropic(
-    nl_spec: str, dut: DutMetadata, *,
-    plan_id: str, api_key: str | None = None,
-    model: str = "claude-sonnet-4-6",
-) -> TestPlan: ...
-
-def extract_with_openai_compatible(
-    nl_spec: str, dut: DutMetadata, *,
-    plan_id: str, api_key: str, base_url: str, model: str,
-) -> TestPlan: ...
-```
-
-**They share:**
-- The same `_SYSTEM_PROMPT` — all "how to extract" knowledge lives there
-- The same schema: `TestPlan.model_json_schema()` — fed to both providers'
-  structured-output mechanism
-- The same `TestPlan.model_validate(...)` for the response
-
-**The only difference is the ~30 lines of SDK-specific code:**
-Anthropic uses native `tools[].input_schema` + `tool_choice`; OpenAI-
-compatible uses `tools[].function.parameters` + `tool_choice`.
-
-**Adding a new provider** = add another `extract_with_<name>` function,
-30 lines, same signature. No factory dispatch, no shared base class.
-
-### Automated evaluator
-
-`evaluate.py` provides:
-
-```python
-def evaluate_extraction(extracted: TestPlan, gold: TestPlan) -> EvaluationReport:
-    """Returns (equivalent: bool, differences: tuple[str, ...])."""
-```
-
-Under the hood, `ir.semantic_equivalent()` enforces these rules:
-- Ignores `meta.id` and `meta.nl_spec` (labels, not content)
-- Treats the 6 top-level lists as **set-like** (analyses / stimulus /
-  loading / measurements / pass_criteria / corners — order ignored)
-- Treats `dut.subckt_ports` as **sequence-like** (SPICE call order)
-- Implicit defaults ≡ explicit defaults (pydantic auto-fills both)
-
-When the two IRs differ, the report lists **field-level diffs** like:
-
-```
-- measurements[1].direction: extracted='rising' gold='falling'
-- pass_criteria[0].value: extracted=70.0 gold=60.0
-```
-
-That makes benchmark failures **diagnosable in seconds** — not just a
-binary "wrong".
-
-### Running example: 5-T differential-pair OTA
-
-The foundation of the entire project. A textbook circuit + two simple
-specs, walked end-to-end by hand through every stage. The artifact
-`trace.md` is a 380+ line **engineering log** that records, per stage:
-
-- What the inputs were
-- What was hand-written, and why
-- Where the friction was
-- What hack got us past it
-- What that implies the schema needs
-
-**That trace is what determined the IR schema's shape** — without it,
-the schema would be guess-driven.
-
-| File | Role |
-|---|---|
-| `trace.md` | end-to-end walkthrough; 27 punch-list items |
-| `dut.cir` | DUT netlist (5 MOSFETs + level-1 models) |
-| `testbench.cir` | full testbench (executable in ngspice) |
-| `testbench.log` | actual ngspice output |
-
-Measured results: **DC gain = 66.11 dB (spec > 60 dB → PASS), UGB = 32.07 MHz
-(spec ≥ 10 MHz → PASS).**
-
----
-
-## Design principles
-
-> These thread through *every* part of the code, not decorative.
-
-1. **Cross-provider first.** Parallel `extract_with_<provider>` functions,
-   never a unified `Provider` interface.
-
-2. **Strict schema, fail fast.** `extra="forbid"`, closed enums, cross-
-   field validators. Reject malformed input *at the earliest boundary*
-   with precise error messages.
-
-3. **Closed primitives over expression DSL.** v0 ships 2 measurement
-   primitives — adding new ones is deliberate, driven by new running
-   examples.
-
-4. **No premature abstraction.** `extract_with_anthropic` and
-   `extract_with_openai_compatible` are explicitly duplicated. No
-   `Provider` base class. No LangChain. The Nth provider is when we
-   consider abstraction — not the 2nd.
-
-5. **Trace before code.** Every new running example starts with a manual
-   walkthrough and a trace.md. New code must be backed by a trace-surfaced
-   need.
-
-6. **Tests are schema-acceptance tests.** Not testing code logic — testing
-   that the schema can express each example and reject every typical LLM
-   mistake.
-
----
-
-## Roadmap
-
-Following the original 7-step plan:
+## 7. Roadmap
 
 | Step | Description | Status |
 |---|---|---|
-| 1 | Pick one running example, walk it end-to-end → trace | ✅ done |
-| 2 | Lock the IR schema + define semantic equivalence | ✅ done |
-| 3 | Implement Stage-1 LLM extract + auto-evaluation | ✅ done |
-| 4 | Grow to 10–20 seed cases, run a real Stage-1 benchmark | ⏳ next |
-| 5 | Implement Stage-2 emit (ngspice) + executability metric | ⏳ |
-| 6 | End-to-end run; compare IR-path vs direct generation | ⏳ |
-| 7 | Cluster failure modes; decide the next iteration's focus | ⏳ |
+| 1 | Select a reference example; walk the pipeline end-to-end; produce trace | Complete (2026-05-13) |
+| 2 | Lock the IR schema and semantic-equivalence definition | Complete (2026-05-13) |
+| 3 | Implement Stage-1 extraction and automated evaluation | Complete (2026-05-14) |
+| 4 | Extend the IR to 4 analyses / 16 primitives; construct 20-case benchmark; implement runner | Code-complete (2026-05-15); benchmark execution pending |
+| 5 | Implement Stage-2 emitter (IR → ngspice netlist) and executability metric | Pending |
+| 6 | End-to-end execution; comparison against direct-generation baseline | Pending |
+| 7 | Cluster failure modes; plan the subsequent iteration | Pending |
 
 ---
 
-## Testing & quality
+## 8. Design Principles
 
-| File | Tests | What it tests |
-|---|---|---|
-| `tests/test_ir_diff_pair_ota.py` | 9 | gold IR expressible in schema; JSON round-trip; per-gap validators |
-| `tests/test_ir_equivalence.py` | 14 | semantic equivalence boundaries (order, metadata, sequence sensitivity, value diffs) |
-| `tests/test_extract_live.py` | 2 | live LLM extraction vs gold IR; gated on API key env vars |
+The following principles inform engineering decisions throughout the
+codebase:
 
-Lint: `ruff` configured in `pyproject.toml`; `uv run ruff check src/ tests/` is clean.
-
-```bash
-uv run pytest -v          # full suite (live tests skip if no key)
-uv run ruff check         # lint
-```
-
----
-
-## FAQ
-
-**Q: Why does v0 stop at spec → IR? Don't we want executable testbench end-to-end?**
-A: The 27 trace items split across 4 distinct layers (IR schema / emitter
-/ PDKContext / evaluator). Trying to do all of them at once means none of
-them go deep. Step 2 nails the IR layer; Step 5 will build the emitter on
-top of a stable foundation.
-
-**Q: Why ngspice, not Spectre?**
-A: ngspice is an open-source fallback and lets the project remain
-hermetic for testing. v0 using ngspice doesn't mean ngspice-forever —
-the `MeasurementPrimitive` abstraction is precisely what lets a future
-emitter target Spectre, HSPICE, *or* ngspice.
-
-**Q: I don't have an Anthropic key, only an OpenRouter or other third-party platform key. Can I use this?**
-A: Yes. Use `extract_with_openai_compatible(...)` and pass your
-`(api_key, base_url, model)` triple. The `OPENAI_COMPAT_*` env vars in
-`tests/test_extract_live.py` are designed exactly for this.
-
-**Q: Why not LangChain?**
-A: LangChain's abstractions are too thick for a research project that
-needs to compare LLMs at the structured-extraction level — prompt-caching
-signals, error diagnostics, token usage are all obscured. Two 30-line
-parallel functions are ~10× simpler and far more controllable.
-
-**Q: Can I add a new measurement primitive?**
-A: Yes but deliberately — the closed-primitive set is a core schema
-invariant. The recipe:
-1. Surface the new primitive via a fresh running example + trace
-2. Add the value to the `MeasurementPrimitive` enum
-3. Extend `Measurement._primitive_params` to validate its parameters
-4. Document the primitive's semantics + use cases in `_SYSTEM_PROMPT`
-5. Add tests asserting the validator behaviour
+1. **Cross-provider portability.** Multi-vendor LLM support is
+   implemented by parallel `extract_with_<provider>` functions, not by
+   a Provider abstraction layer or a mediator library.
+2. **Strict schema, fail fast.** `extra="forbid"`, closed enums, and
+   cross-field validators jointly ensure that malformed LLM output is
+   rejected at the earliest boundary with field-localised error
+   messages.
+3. **Closed primitives over expression DSL.** v0 ships 16
+   measurement primitives; new primitives are added only when surfaced
+   by a new running example.
+4. **No premature abstraction.** Abstraction is introduced after a
+   pattern crystallises across multiple concrete implementations, not
+   before.
+5. **Trace before code.** Each new running example begins with a
+   manual end-to-end walkthrough whose trace document records the
+   constraints subsequent code must satisfy.
+6. **Tests as schema-acceptance suites.** Tests verify that the schema
+   can express each example and reject typical LLM errors, rather than
+   testing code logic in isolation.
 
 ---
 
-<div align="center">
+## 9. Frequently asked questions
 
-[⬆ Back to top](#spec2testbench) &nbsp;·&nbsp; [🇨🇳 中文版 ↑](#spec2testbench)
+**Q. Why does v0 stop at NL → IR rather than producing executable
+testbenches directly?**
+A. The reference trace surfaced 27 engineering gaps distributed across
+four layers (IR schema / emitter / PDKContext / evaluator). Addressing
+them simultaneously would result in superficial coverage of each
+layer. Step 2 first stabilises the IR layer; the emitter (Step 5) is
+then built on a settled foundation.
 
-</div>
+**Q. Why ngspice rather than Spectre as the default simulator?**
+A. ngspice is open-source and supports hermetic reproduction. The
+`MeasurementPrimitive` abstraction is intentionally simulator-
+neutral, so a future emitter can target Spectre, HSPICE, or ngspice
+through the same IR.
+
+**Q. May I use this codebase with an OpenRouter or other third-party
+OpenAI-compatible key?**
+A. Yes. Invoke `extract_with_openai_compatible(...)` with the
+`(api_key, base_url, model)` triple. The `OPENAI_COMPAT_*` environment
+variables in `tests/test_extract_live.py` are designed for this case.
+
+**Q. Why is LangChain not used?**
+A. LangChain's abstractions obscure several signals central to this
+research (prompt-cache hit rate, token usage, structured-output
+error diagnostics). Two parallel 30-line functions provide finer
+control with substantially less indirection.
+
+**Q. How does one add a new measurement primitive?**
+A. The procedure is:
+1. Surface the primitive's need via a new running example and trace.
+2. Add the new value to the `MeasurementPrimitive` enum.
+3. Declare the primitive's required and disallowed fields in
+   `_PRIMITIVE_PARAM_SPEC`, which drives the
+   `Measurement._primitive_params` validator.
+4. Document the primitive in `_SYSTEM_PROMPT`, including its
+   semantics, required fields, and NL trigger phrases.
+5. Add positive- and negative-path tests in
+   `tests/test_ir_extended_primitives.py`.
+
+---
+
+[Back to top](#spec2testbench)

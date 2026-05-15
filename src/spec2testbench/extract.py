@@ -63,7 +63,8 @@ The TestPlan IR has these sections:
 - meta:          plan id and the original NL spec text (passed through verbatim)
 - dut:           DUT identity, netlist_path, and the ORDERED subckt_ports list
                  (these are given in the user message; copy them faithfully)
-- analyses:      simulation runs to do, each with a unique `id`
+- analyses:      simulation runs to do, each with a unique `id` and a `type`
+                 from {"AC","TRAN","DC","NOISE"} — picks the right sub-schema
 - stimulus:      signal sources, by stimulus kind enum + DUT port roles
 - loading:       passive loads with from_role/to_role and SPICE-style values
 - measurements:  SCALARS derived from analyses; each picks a primitive from
@@ -71,37 +72,175 @@ The TestPlan IR has these sections:
 - pass_criteria: per-measurement verdicts with strict op + spec_unit
 - corners:       process / temperature / optional supply_voltage_override
 
+== ANALYSIS TYPES (closed, exactly four) ==
+
+"AC"     — small-signal sweep. Fields: f_start, f_stop, sweep_style (dec/oct/lin),
+           points_per_decade.
+"TRAN"   — transient. Fields: t_step (printing step, s), t_stop (s), t_start (s),
+           uic (bool).
+"DC"     — operating point or single-source sweep. Fields: optional
+           sweep_source_role, sweep_start, sweep_stop, sweep_step — set ALL
+           four for a sweep, NONE for a plain operating-point (.op).
+"NOISE"  — noise sweep. Fields: output_role, input_stimulus_id (id of an AC
+           stimulus that ngspice treats as the input source), f_start, f_stop,
+           sweep_style, points_per_decade.
+
+Anything outside these four (stb, pss, pac, pnoise, hb, qpss, envlp, dcmatch,
+acmatch, sp, xf, sens, pz, etc.) is NOT supported in v0 — do NOT emit them.
+
 == KEY RULES ==
 
-1. MEASUREMENT PRIMITIVES (closed vocabulary, exactly these strings):
+1. MEASUREMENT PRIMITIVES (closed vocabulary, exactly these 16 strings):
+
+   --- AC primitives (use only with type="AC" analyses) ---
 
    "ac_low_freq_asymptote"
      Semantics: |H(f)| evaluated at f = f_start of the referenced AC analysis.
-     Use for: "DC gain", "low-frequency gain", "open-loop gain at DC".
+     NL triggers: "DC gain", "low-frequency gain", "open-loop gain at DC".
      Takes NO extra parameters. output_unit is typically "dB".
 
    "ac_freq_at_magnitude_crossing"
-     Semantics: the frequency at which |H(f)| crosses target_magnitude
-     in the specified direction during the AC sweep.
-     REQUIRES: target_magnitude (LINEAR, not dB) AND direction.
-     direction ∈ {"rising", "falling", "any"}.
-     Use for:
+     Semantics: frequency at which |H(f)| crosses target_magnitude in the
+     specified direction during the AC sweep.
+     REQUIRES: target_magnitude (LINEAR, not dB) AND direction
+               ∈ {"rising","falling","any"}.
+     NL triggers:
        - Unity-gain bandwidth / UGB / GBW: target_magnitude=1.0, direction="falling"
-       - −3 dB high-frequency corner:       target_magnitude=10**(-3/20) of low-freq gain, direction="falling"
+       - −3 dB high-frequency corner:      target_magnitude=10**(-3/20)·gain_lin,
+                                           direction="falling"
 
-   The schema will reject any primitive name not in this list.
+   "ac_phase_at_freq"
+     Semantics: ∠H(f) at a specified frequency, in degrees.
+     REQUIRES: EXACTLY ONE of at_freq (Hz) or at_when_measurement
+               (the id of another measurement whose value is a frequency,
+                typically a UGB measurement).
+     NL triggers: "phase at 1 MHz", "phase response at the unity gain frequency".
+
+   "ac_magnitude_at_freq"
+     Semantics: |H(f)| at a specified frequency.
+     REQUIRES: at_freq (Hz). output_unit is typically "dB".
+     NL triggers: "gain at 1 MHz", "in-band gain at 100 kHz".
+
+   "ac_phase_margin"
+     Semantics: phase margin = 180° + ∠H(f@UGB). Always evaluated at the
+     UGB frequency of another measurement.
+     REQUIRES: at_when_measurement = id of the UGB-style measurement.
+     NL triggers: "phase margin", "PM".
+
+   --- TRAN primitives (use only with type="TRAN" analyses) ---
+
+   "tran_slew_rate"
+     Semantics: |dV/dt| during an output transition, measured over 10%→90%
+     of the step amplitude.
+     REQUIRES: edge ∈ {"rising","falling","both"}.
+     OPTIONAL: window = [t_low, t_high] (s).
+     NL triggers: "slew rate", "压摆率".
+
+   "tran_settling_time"
+     Semantics: time from the trigger stimulus edge until the output stays
+     within ±tolerance_pct of the final value.
+     REQUIRES: tolerance_pct (fraction, e.g. 0.001 for 0.1%), trigger_event
+               = {stimulus_id, edge ∈ {"rising","falling","both"}}.
+     OPTIONAL: window.
+     NL triggers: "settling time to 0.1%", "稳定时间".
+
+   "tran_overshoot_pct"
+     Semantics: 100 × (max(V) − V_final) / (V_final − V_initial) over window.
+     OPTIONAL: window. output_unit is typically "%".
+     NL triggers: "overshoot", "过冲".
+
+   "tran_peak_to_peak"
+     Semantics: max(V) − min(V) over window.
+     OPTIONAL: window.
+     NL triggers: "peak-to-peak output", "output swing" (when transient),
+                  "峰峰值".
+
+   "tran_thd"
+     Semantics: total harmonic distortion at a fundamental single-tone input.
+     REQUIRES: fundamental_freq (Hz).
+     OPTIONAL: num_harmonics (default 9), window. output_unit is "%" or "dB".
+     NL triggers: "THD", "总谐波失真".
+
+   --- DC primitives (use only with type="DC" analyses) ---
+
+   "dc_offset_input_referred"
+     Semantics: input voltage required to steer the output to a target value.
+     REQUIRES: target_output_role (DUT role), target_output_value (float in V
+               or the string "midrail" for (VDD+VSS)/2).
+     output_unit is "V".
+     NL triggers: "input-referred offset", "输入失调".
+
+   "dc_output_swing_range"
+     Semantics: the requested extreme of the output across a DC sweep.
+     REQUIRES: extreme ∈ {"min","max","range"} ("range" = max − min).
+     output_unit is "V".
+     NL triggers: "output swing", "输出摆幅".
+
+   "dc_supply_current"
+     Semantics: current flowing in/out of the named supply rail at the .op
+     point (or DC sweep point).
+     REQUIRES: supply_role (DUT role, typically "vdd").
+     output_unit is "A".
+     NL triggers: "quiescent current", "I_DD", "静态电流".
+
+   "dc_gm"
+     Semantics: small-signal transconductance d(I_out)/d(V_in) at the
+     specified bias point.
+     REQUIRES: input_role, output_role, at_bias_value (V).
+     output_unit is "S" (Siemens).
+     NL triggers: "transconductance", "gm".
+
+   --- NOISE primitives (use only with type="NOISE" analyses) ---
+
+   "noise_input_referred_at_freq"
+     Semantics: input-referred noise PSD (V/√Hz) at a specified frequency.
+     REQUIRES: at_freq (Hz). output_unit is "V/sqrt(Hz)".
+     NL triggers: "input-referred noise at 1 MHz", "1 kHz 处的输入噪声".
+
+   "noise_integrated_rms"
+     Semantics: RMS integrated noise over [f_low, f_high], referred to
+     input or output side.
+     REQUIRES: f_low (Hz), f_high (Hz), referred_to ∈ {"input","output"}.
+     output_unit is "V".
+     NL triggers: "integrated input-referred noise", "积分噪声 RMS".
+
+   The schema will reject any primitive name not in this list, any
+   primitive used with the wrong analysis type, and any primitive that is
+   missing its required fields or sets fields it does not own.
 
 2. STIMULUS KINDS (closed enum):
 
    "balanced_differential_AC"
-     Encodes the convention: ±0.5 × magnitude on the two listed ports with
-     phases 0° and 180° (referenced to a common-mode node owned by the
-     emitter, not described here). For any AC test of a differential pair
-     or fully-differential DUT, prefer this kind.
-     `ports` must be [positive_leg_role, negative_leg_role].
+     ±0.5·magnitude on the two listed ports, phases 0°/180°. For AC tests of
+     a differential pair or fully-differential DUT. ports = [positive_leg_role,
+     negative_leg_role]. REQUIRES magnitude.
 
-   "single_ended_AC"   — magnitude on the one listed port; phase 0.
-   "DC_voltage"        — dc_value on the listed port; typical for bias pins.
+   "single_ended_AC"     — magnitude on the one listed port; phase 0.
+                           REQUIRES magnitude. Use as the input source for
+                           NoiseAnalysis (set noise.input_stimulus_id to this).
+
+   "DC_voltage"          — dc_value on the listed port; typical for bias pins.
+                           REQUIRES dc_value.
+
+   "tran_pulse"          — SPICE PULSE(v1 v2 td tr tf pw per).
+                           Carries a nested `pulse` object with fields v1, v2,
+                           td (default 0), tr (default 1e-9), tf (default 1e-9),
+                           pw, per. Use for step-response inputs feeding
+                           slew_rate / settling_time / overshoot.
+
+   "tran_sine"           — SPICE SIN(offset amp freq).
+                           Carries a nested `sine` object with dc_offset
+                           (default 0), amplitude, freq. Use as the fundamental
+                           tone for tran_thd.
+
+   "tran_step"           — one-shot V1→V2 step at time t_step. Carries a
+                           nested `step` object with v1, v2, t_step (default 0),
+                           tr (default 1e-12). Lighter than tran_pulse when only
+                           one edge is needed.
+
+   "dc_sweep_source"     — declares this DUT-port stimulus is the source being
+                           swept by a DcAnalysis. Set NO inline parameters; the
+                           DcAnalysis carries sweep_start/stop/step.
 
 3. PORT ROLES come from the user message's DUT metadata. Use the exact
    role strings provided; do NOT rename them. Typical conventions:
@@ -111,19 +250,24 @@ The TestPlan IR has these sections:
      - "bias_<something>"  external bias-injection pin (NOT a signal)
 
 4. PASS-CRITERION OPERATOR — choose strictness from NL phrasing:
-     "should exceed" / "must be greater than"            → "gt"
-     "at least" / "≥"  / "not less than" / "minimum of"  → "ge"
-     "below" / "must be less than"                       → "lt"
-     "at most" / "≤" / "maximum of"                      → "le"
-     "approximately" / "around"                          → "approx_eq" + tolerance
+     "should exceed" / "must be greater than" / "shall exceed"  → "gt"
+     "at least" / "≥" / "not less than" / "minimum of"          → "ge"
+     "below" / "must be less than" / "shall be less than"        → "lt"
+     "at most" / "≤" / "maximum of" / "no more than"             → "le"
+     "approximately" / "around" / "≈"                            → "approx_eq" + tolerance
 
 5. UNITS — always declare both:
      measurement.output_unit  = the raw unit the simulator will produce
      pass_criterion.spec_unit = the unit the spec phrased the threshold in
    Examples:
-     "DC gain > 60 dB"      → output_unit="dB",  spec_unit="dB"
-     "UGB ≥ 10 MHz"         → output_unit="Hz",  spec_unit="MHz"
-     "phase margin > 60°"   → output_unit="deg", spec_unit="deg"
+     "DC gain > 60 dB"               → output_unit="dB",          spec_unit="dB"
+     "UGB ≥ 10 MHz"                  → output_unit="Hz",          spec_unit="MHz"
+     "phase margin > 60°"            → output_unit="deg",         spec_unit="deg"
+     "slew rate > 10 V/μs"           → output_unit="V/s",         spec_unit="V/us"
+     "settling time < 100 ns"        → output_unit="s",           spec_unit="ns"
+     "input offset < 5 mV"           → output_unit="V",           spec_unit="mV"
+     "Iq < 100 μA"                   → output_unit="A",           spec_unit="uA"
+     "noise at 1 MHz < 10 nV/√Hz"    → output_unit="V/sqrt(Hz)", spec_unit="nV/sqrt(Hz)"
 
 6. CORNERS: if the spec says e.g. "TT corner at 27 °C", emit one Corner
    with process="TT", temperature_celsius=27.0. Leave supply_voltage_override
@@ -134,6 +278,20 @@ The TestPlan IR has these sections:
 8. If the NL spec phrasing is ambiguous (e.g. "DC gain" without saying
    whether to evaluate at f=DC or at f_start), choose the conservative
    default that matches an existing primitive, and do NOT invent fields.
+
+9. ANALYSIS/PRIMITIVE PAIRING is enforced by the schema:
+     - AC primitives need an AC analysis in `from_analysis`.
+     - TRAN primitives need a TRAN analysis.
+     - DC primitives need a DC analysis.
+     - NOISE primitives need a NOISE analysis.
+   If a spec needs (e.g.) both DC gain and slew rate, emit TWO analyses
+   (one AC, one TRAN) and reference the right one from each measurement.
+
+10. When a settling-time / slew-rate measurement needs a stimulus to trigger
+    on, emit the driving stimulus (tran_pulse or tran_step) AND set the
+    measurement's trigger_event = {stimulus_id, edge}. Set the stimulus's
+    scope to "analysis" and scope_analysis_id to that TRAN analysis so it
+    is not active during other (e.g. AC) analyses in the same plan.
 """
 
 
